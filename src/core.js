@@ -162,16 +162,37 @@ export class BrowserHub {
   // ---------------------------------------------------------------- frames
   // CDP screencast pushes a frame whenever the page repaints. Screenshot polling is a fallback
   // until the first screencast frame arrives for the tab (e.g. right after a cross-process navigation).
+  async cdpFor(t) {
+    if (!t.cdp) {
+      t.cdp = await t.page.createCDPSession();
+      t.cdp.on('Page.screencastFrame', (f) => {
+        t.cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {});
+        t.castOk = true;
+        if (this.activeId === t.id) this.frame(b64ToBytes(f.data));
+      });
+    }
+    return t.cdp;
+  }
+  // Real touch input: the page sees touchstart/move/end, native scrolling, taps and pinch.
+  async touch(t, action, points) {
+    const cdp = await this.cdpFor(t);
+    if (!t.touch) {
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+      t.touch = true;
+    }
+    const type = { start: 'touchStart', move: 'touchMove', end: 'touchEnd', cancel: 'touchCancel' }[action];
+    if (!type) throw new Error('bad touch action');
+    const vp = this.viewport;
+    const touchPoints = (Array.isArray(points) ? points : []).slice(0, 5).map((p) => ({
+      x: Math.max(0, Math.min(1, +p.x || 0)) * vp.width,
+      y: Math.max(0, Math.min(1, +p.y || 0)) * vp.height,
+      id: p.id | 0, radiusX: 10, radiusY: 10, force: 1,
+    }));
+    await cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+  }
   async startCast(t) {
     try {
-      if (!t.cdp) {
-        t.cdp = await t.page.createCDPSession();
-        t.cdp.on('Page.screencastFrame', (f) => {
-          t.cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {});
-          t.castOk = true;
-          if (this.activeId === t.id) this.frame(b64ToBytes(f.data));
-        });
-      }
+      await this.cdpFor(t);
       await t.cdp.send('Page.startScreencast', {
         format: 'jpeg', quality: this.quality,
         maxWidth: this.viewport.width, maxHeight: this.viewport.height, everyNthFrame: 1,
@@ -182,12 +203,18 @@ export class BrowserHub {
   async stopCast(t) { if (t && t.cdp) await t.cdp.send('Page.stopScreencast').catch(() => {}); }
   startPoll(t) {
     clearInterval(this.pollTimer);
-    let busy = false;
+    let busy = false, ticks = 0;
     this.pollTimer = setInterval(async () => {
-      if (this.activeId !== t.id || t.castOk || busy || !this.alive) return;
+      if (this.activeId !== t.id || busy || !this.alive) return;
       busy = true;
-      const bytes = await this.capture(t);
-      if (bytes && this.activeId === t.id && !t.castOk) this.frame(bytes);
+      if (++ticks % 4 === 0) {                     // keep the tab title live (pages change it at runtime)
+        const title = await t.page.title().catch(() => t.title);
+        if (title !== t.title) { t.title = title; this.pushTabs(); }
+      }
+      if (!t.castOk) {
+        const bytes = await this.capture(t);
+        if (bytes && this.activeId === t.id && !t.castOk) this.frame(bytes);
+      }
       busy = false;
     }, 400);
   }
@@ -314,11 +341,12 @@ export class BrowserHub {
         await t.page.mouse.wheel({ deltaX: +cmd.dx || 0, deltaY: +cmd.dy || 0 });
         return { ok: true };
       }
+      case 'touch': if (t) await this.touch(t, cmd.action, cmd.points); return { ok: true };
       case 'type': if (t) await t.page.keyboard.type(String(cmd.text || '').slice(0, 500)); return { ok: true };
       case 'press': if (t) await this.press(t.page, cmd.key); return { ok: true };
       case 'viewport': {
         this.viewport = { width: Math.max(320, Math.min(1920, cmd.width | 0)), height: Math.max(320, Math.min(1920, cmd.height | 0)) };
-        for (const x of this.tabs.values()) await x.page.setViewport({ ...this.viewport, deviceScaleFactor: 1 }).catch(() => {});
+        for (const x of this.tabs.values()) { await x.page.setViewport({ ...this.viewport, deviceScaleFactor: 1 }).catch(() => {}); x.touch = false; }
         const a = this.tabs.get(this.activeId);
         if (a) { await this.stopCast(a); a.castOk = false; await this.startCast(a); this.snapshot(a); }
         return { ok: true, viewport: this.viewport };
