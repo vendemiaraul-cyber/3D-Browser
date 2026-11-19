@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Chroma Voxelizer</title>
+<title>3D-Browser · Chroma Voxelizer</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <script type="importmap">
 { "imports": {
@@ -11,7 +11,7 @@
 } }
 </script>
 <style>
-  :root { --bg:#0b0d12; --glass:rgba(16,19,26,.86); --line:#262b36; --txt:#d8dde8; --dim:#7d8596; --acc:#ffb020; --tgt:#ef4444; }
+  :root { --bg:#0b0d12; --glass:rgba(16,19,26,.9); --line:#262b36; --txt:#d8dde8; --dim:#7d8596; --acc:#ffb020; --tgt:#ef4444; --side:316px; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--txt); font:13px/1.35 ui-sans-serif,system-ui,sans-serif; overflow:hidden; }
   canvas#gl { position:fixed; inset:0; display:block; }
@@ -24,36 +24,41 @@
   input[type=checkbox] { accent-color:var(--acc); }
   label { color:var(--dim); }
   .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
-
-  /* browser chrome */
-  #chrome { position:fixed; left:0; right:0; top:0; z-index:5; background:var(--glass); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
-  #tabs { display:flex; gap:4px; padding:6px 8px 0; overflow-x:auto; scrollbar-width:none; }
-  .tab { display:flex; align-items:center; gap:6px; max-width:210px; min-width:90px; padding:5px 8px; border:1px solid var(--line); border-bottom:none; border-radius:8px 8px 0 0; background:#141821; cursor:pointer; white-space:nowrap; }
-  .tab.active { background:#232937; border-color:#3a4252; }
-  .tab .t { overflow:hidden; text-overflow:ellipsis; flex:1; }
-  .tab .x { color:var(--dim); padding:0 2px; border-radius:4px; }
-  .tab .x:hover { color:#fff; background:#3a4252; }
-  .tab.loading .t::before { content:'◌ '; color:var(--acc); }
-  #bar { display:flex; gap:6px; padding:6px 8px; align-items:center; }
-  #url { flex:1; min-width:120px; }
-  #conn { width:9px; height:9px; border-radius:50%; background:#555; flex:none; }
-  #conn.ok { background:#22c55e; box-shadow:0 0 8px #22c55e; }
-  #conn.bad { background:#ef4444; }
-
-  /* side panels */
-  .panel { position:fixed; top:92px; z-index:4; width:270px; max-height:calc(100% - 104px); overflow:auto; background:var(--glass); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
-  #left { left:10px; } #right { right:10px; }
-  .panel h2 { margin:0 0 8px; font-size:11px; letter-spacing:.14em; color:var(--acc); font-weight:700; cursor:pointer; user-select:none; }
-  .panel.collapsed > :not(h2) { display:none; }
-  .panel section { margin:0 0 10px; }
   .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
   .kv { display:flex; justify-content:space-between; }
   .kv span:last-child { color:var(--txt); font-family:ui-monospace,monospace; }
+  .hide { display:none !important; }
+
+  /* status chip + menu button (top right) */
+  #dock { position:fixed; top:10px; right:10px; z-index:5; display:flex; gap:6px; align-items:center; transition:right .25s; }
+  body.side-open #dock { right:calc(min(var(--side), 92vw) + 10px); }
+  .chip { display:flex; align-items:center; gap:7px; padding:5px 10px; border:1px solid var(--line); border-radius:20px; background:var(--glass); backdrop-filter:blur(8px); font:11px ui-monospace,monospace; letter-spacing:.06em; }
+  #lamp { width:10px; height:10px; border-radius:50%; background:#333; flex:none; }
+  #conn { width:8px; height:8px; border-radius:50%; background:#555; flex:none; }
+  #conn.ok { background:#22c55e; box-shadow:0 0 8px #22c55e; } #conn.bad { background:#ef4444; }
+
+  /* closable sidebar */
+  #side { position:fixed; top:0; right:0; bottom:0; width:min(var(--side), 92vw); z-index:6; display:flex; flex-direction:column; background:var(--glass); backdrop-filter:blur(10px); border-left:1px solid var(--line); transform:translateX(100%); transition:transform .25s; }
+  body.side-open #side { transform:none; }
+  #sideHead { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); }
+  #sideHead b { flex:1; font-size:11px; letter-spacing:.16em; color:var(--acc); }
+  #sideBody { flex:1; overflow:auto; padding:0 12px 14px; }
+  details { border-bottom:1px solid var(--line); padding:9px 0; }
+  details > *:not(summary) { margin-top:8px; }
+  summary { cursor:pointer; list-style:none; font-size:11px; letter-spacing:.14em; font-weight:700; color:var(--txt); display:flex; justify-content:space-between; user-select:none; }
+  summary::-webkit-details-marker { display:none; }
+  summary::after { content:'▸'; color:var(--dim); } details[open] > summary::after { content:'▾'; }
+  details section { margin:0 0 10px; }
+  .seg { display:flex; } .seg button { flex:1; border-radius:0; padding:5px 4px; }
+  .seg button:first-child { border-radius:7px 0 0 7px; } .seg button:last-child { border-radius:0 7px 7px 0; }
   #swatches { display:flex; gap:5px; margin-top:6px; flex-wrap:wrap; }
   #swatches b { width:20px; height:20px; border-radius:5px; border:1px solid #0006; cursor:pointer; display:block; }
   input[type=color] { width:44px; height:30px; padding:0; border:1px solid var(--line); border-radius:7px; background:none; }
+  #palette { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; }
+  #palette .pc { display:flex; align-items:center; gap:4px; padding:2px 4px 2px 2px; border:1px solid var(--line); border-radius:7px; background:#0f1218; font:11px ui-monospace,monospace; }
+  #palette .pc i { width:16px; height:16px; border-radius:4px; display:block; border:1px solid #0006; }
+  #palette .pc b { cursor:pointer; color:var(--dim); padding:0 2px; } #palette .pc b:hover { color:#fff; }
   #read { padding:8px; border:1px solid var(--line); border-radius:9px; background:#0f1218; }
-  #lamp { display:inline-block; width:10px; height:10px; border-radius:50%; background:#333; margin-right:6px; vertical-align:-1px; }
   #hover { display:inline-block; width:14px; height:14px; border-radius:4px; border:1px solid #0008; vertical-align:-3px; }
   #results { list-style:none; margin:6px 0 0; padding:0; }
   #results li { display:grid; grid-template-columns:1fr auto; gap:2px 8px; padding:5px 6px; border-radius:7px; cursor:pointer; }
@@ -63,150 +68,474 @@
   #results .bar { grid-column:1/3; height:3px; background:#1c212b; border-radius:2px; overflow:hidden; }
   #results .bar i { display:block; height:100%; background:var(--tgt); }
   textarea { width:100%; height:64px; resize:vertical; }
-  #hint { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); z-index:3; color:var(--dim); font-size:12px; background:var(--glass); padding:5px 12px; border-radius:20px; border:1px solid var(--line); white-space:nowrap; }
-  #hint b { color:var(--txt); font-weight:600; }
-  #toast { position:fixed; bottom:48px; left:50%; transform:translateX(-50%); z-index:6; background:#2a1416; border:1px solid #6b2a2f; color:#fecaca; padding:7px 12px; border-radius:9px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:70vw; }
-  #toast.show { opacity:1; }
-  .seg { display:flex; gap:0; margin-top:4px; }
-  .seg button { flex:1; border-radius:0; padding:5px 4px; }
-  .seg button:first-child { border-radius:7px 0 0 7px; } .seg button:last-child { border-radius:0 7px 7px 0; }
-  #palette { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; }
-  #palette .chip { display:flex; align-items:center; gap:4px; padding:2px 4px 2px 2px; border:1px solid var(--line); border-radius:7px; background:#0f1218; font:11px ui-monospace,monospace; }
-  #palette .chip i { width:16px; height:16px; border-radius:4px; display:block; border:1px solid #0006; }
-  #palette .chip b { cursor:pointer; color:var(--dim); padding:0 2px; } #palette .chip b:hover { color:#fff; }
-  .hide { display:none !important; }
-  /* 2D touch screen */
-  #touch { position:fixed; z-index:7; left:50%; bottom:46px; transform:translateX(-50%); width:min(560px, 94vw); background:var(--glass); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:14px; box-shadow:0 12px 40px #000a; display:none; }
+  .help { color:var(--dim); line-height:1.5; } .help b { color:var(--txt); font-weight:600; }
+
+  /* Chromium panel: the live 2D page, touch screen, tabs and URL bar */
+  #touch { position:fixed; z-index:7; left:12px; bottom:12px; width:min(640px, 94vw); background:var(--glass); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:14px; box-shadow:0 12px 40px #000a; display:none; }
   #touch.open { display:block; }
   #touch.min .winbody { display:none; }
   #touchBar { display:flex; align-items:center; gap:6px; padding:6px 8px 6px 12px; cursor:grab; user-select:none; touch-action:none; }
-  #touchBar b { font-size:11px; letter-spacing:.14em; color:var(--acc); }
-  #touchBar .sp { flex:1; } #touchBar button { padding:2px 8px; }
+  #touchBar b { font-size:11px; letter-spacing:.14em; color:var(--acc); flex:none; }
+  #tTitle { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--dim); }
+  #touchBar button { padding:2px 8px; }
   #touch .winbody { padding:0 8px 8px; }
+  #tabs { display:flex; gap:4px; overflow-x:auto; scrollbar-width:none; }
+  .tab { display:flex; align-items:center; gap:6px; max-width:180px; min-width:70px; padding:4px 8px; border:1px solid var(--line); border-bottom:none; border-radius:8px 8px 0 0; background:#141821; cursor:pointer; white-space:nowrap; font-size:12px; }
+  .tab.active { background:#232937; border-color:#3a4252; }
+  .tab .t { overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .tab .x { color:var(--dim); padding:0 2px; border-radius:4px; } .tab .x:hover { color:#fff; background:#3a4252; }
+  .tab.loading .t::before { content:'◌ '; color:var(--acc); }
+  #nav { display:flex; gap:5px; align-items:center; padding:5px 0 6px; } #nav button { padding:4px 8px; } #url { flex:1; min-width:80px; }
   #tWrap { position:relative; border-radius:9px; overflow:hidden; background:#000; border:1px solid #000; }
   #tCanvas { display:block; width:100%; height:auto; touch-action:none; cursor:pointer; }
   #tWrap .dot { position:absolute; width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50%; border:2px solid #fff; background:rgba(255,176,32,.35); box-shadow:0 0 12px rgba(255,176,32,.8); pointer-events:none; }
   #touch .row { margin-top:6px; } #tType { flex:1; min-width:80px; }
-  #focusRing { position:fixed; z-index:3; top:96px; left:50%; transform:translateX(-50%); color:#111; background:var(--acc); font-weight:600; padding:3px 10px; border-radius:20px; font-size:12px; display:none; }
+
+  #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:9; background:#2a1416; border:1px solid #6b2a2f; color:#fecaca; padding:7px 12px; border-radius:9px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:70vw; }
+  #toast.show { opacity:1; }
+  #focusRing { position:fixed; z-index:3; top:12px; left:50%; transform:translateX(-50%); color:#111; background:var(--acc); font-weight:600; padding:3px 10px; border-radius:20px; font-size:12px; display:none; }
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
-
-<div id="chrome">
-  <div id="tabs"></div>
-  <div id="bar">
-    <span id="conn" title="Chromium connection"></span>
-    <button id="bBack" title="Back">◀</button>
-    <button id="bFwd" title="Forward">▶</button>
-    <button id="bReload" title="Reload">⟳</button>
-    <input id="url" type="text" placeholder="Type a URL or search, then Enter" spellcheck="false">
-    <button id="bNewTab" title="Open in a new tab">＋ Tab</button>
-    <button id="bTouch" title="Open the 2D touch screen">✋ Touch</button>
-    <select id="vp" title="Chromium viewport">
-      <option value="1280x720">1280×720</option>
-      <option value="1440x900">1440×900</option>
-      <option value="1024x768">1024×768</option>
-      <option value="390x844">390×844 phone</option>
-    </select>
-  </div>
-</div>
 <div id="focusRing">Keyboard → page · Esc to release</div>
 
-<div id="left" class="panel">
-  <h2 id="hL">◆ DETECTOR</h2>
-  <section>
-    <label>Mode</label>
-    <div class="seg" id="modeSeg"><button data-m="one" class="on">One color</button><button data-m="multi">Several</button><button data-m="all">All colors</button></div>
-  </section>
-  <section id="secTarget">
-    <label id="lblTarget">Target color</label>
-    <div class="row" style="margin-top:4px">
-      <input type="color" id="cTarget" value="#ef4444">
-      <span id="hex" class="mono">#EF4444</span>
-      <button id="bDrop" title="Pick any color on your screen">Eyedropper</button>
-      <button id="bAdd" class="hide" title="Add this color to the list">＋ Add</button>
-    </div>
-    <div id="palette" class="hide"></div>
-    <div id="swatches"></div>
-  </section>
-  <section id="secRelief" class="hide">
-    <label>Every pixel becomes a cube in its own color.</label>
-    <div class="row" style="margin-top:4px"><label>Relief from</label>
-      <select id="selRelief"><option value="bright">brightness</option><option value="chroma">colorfulness</option><option value="flat">flat</option></select></div>
-  </section>
-  <section>
-    <div id="tolBox"><div class="kv"><label>Tolerance (ΔE)</label><span id="vTol"></span></div>
-    <input type="range" id="sTol" min="2" max="60" value="20"></div>
-    <div class="kv"><label>Cubes across</label><span id="vCols"></span></div>
-    <input type="range" id="sCols" min="40" max="200" step="4" value="128">
-    <div class="kv"><label>Scan speed (rows/s)</label><span id="vSpeed"></span></div>
-    <input type="range" id="sSpeed" min="10" max="400" step="5" value="70">
-    <div class="kv"><label>Relief by match strength</label><span id="vDepth"></span></div>
-    <input type="range" id="sDepth" min="0" max="3" step="0.1" value="1.2">
-    <div class="kv"><label>Detect when ≥ cubes</label><span id="vTrig"></span></div>
-    <input type="range" id="sTrig" min="1" max="500" value="25">
-  </section>
-  <section>
-    <div class="row"><input type="checkbox" id="kLoop" checked><label for="kLoop">Loop scan</label></div>
-    <div class="row"><input type="checkbox" id="kLive"><label for="kLive">Live (whole frame, no sweep)</label></div>
-    <div class="row"><input type="checkbox" id="kTrue" checked><label for="kTrue">Cubes use the page's real pixel color</label></div>
-    <div class="row"><input type="checkbox" id="kGhost"><label for="kGhost">Show unmatched pixels as ghosts</label></div>
-    <div class="row" style="margin-top:6px"><button id="bRescan">Rescan</button><button id="bClear">Clear cubes</button><button id="bCam">Reset view</button></div>
-  </section>
-  <div id="read">
-    <div><span id="lamp"></span><b id="state">SCANNING</b></div>
-    <div class="mono" id="readTxt" style="margin-top:4px">—</div>
-    <div style="margin-top:4px;color:var(--dim)">Under cursor: <span id="hover"></span> <span id="hoverHex" class="mono">—</span></div>
-  </div>
+<div id="dock">
+  <div class="chip" title="Detector status"><span id="conn"></span><span id="lamp"></span><span id="state">CONNECTING</span></div>
+  <button id="bTouch" title="Show / hide the Chromium panel">▣ Chromium</button>
+  <button id="bSide" title="Show / hide the controls">☰ Controls</button>
 </div>
 
-<div id="right" class="panel">
-  <h2 id="hR">◆ AUTO-BROWSE</h2>
-  <section>
-    <div class="row"><button id="bCrawl">▶ Start auto-browse</button></div>
-    <div class="kv" style="margin-top:6px"><label>Seconds per page</label><span id="vDwell"></span></div>
-    <input type="range" id="sDwell" min="2" max="40" value="6">
-    <div class="row"><input type="checkbox" id="kSame"><label for="kSame">Stay on the same site</label></div>
-    <div class="row"><input type="checkbox" id="kScroll" checked><label for="kScroll">Scroll while scanning</label></div>
-    <div class="row"><label>Max pages</label><input type="number" id="nMax" value="200" min="1" style="width:80px"></div>
-    <div class="mono" id="crawlTxt" style="margin-top:6px;color:var(--dim)">idle</div>
-  </section>
-  <section>
-    <label>URLs to visit (one per line)</label>
-    <textarea id="taUrls" placeholder="https://example.org&#10;news.ycombinator.com&#10;…"></textarea>
-    <div class="row"><button id="bQueue">Add to queue</button><button id="bTabs">Open each in a tab</button></div>
-  </section>
-  <section>
-    <div class="kv"><label>Detections by page</label><span><button id="bCsv" style="padding:2px 7px">CSV</button></span></div>
-    <ul id="results"></ul>
-  </section>
-</div>
-
-<div id="hint">Drag to orbit · <b>Click/scroll/type on the input screen</b> to use the page · <b>Alt+click</b> it to pick a color · <b>✋ Touch</b> for the 2D touch screen</div>
-<div id="toast"></div>
+<!-- Chromium panel: runs first, works even before (or without) the 3D engine -->
 <div id="touch">
-  <div id="touchBar"><b>◆ TOUCH SCREEN</b><span class="sp"></span><button id="tSize" title="Bigger / smaller">⤢</button><button id="tMin" title="Minimize">–</button><button id="tClose" title="Close">✕</button></div>
+  <div id="touchBar"><b>◆ CHROMIUM</b><span id="tTitle"></span><button id="tSize" title="Bigger / smaller">⤢</button><button id="tMin" title="Minimize">–</button><button id="tClose" title="Hide">✕</button></div>
   <div class="winbody">
+    <div id="tabs"></div>
+    <div id="nav">
+      <button id="bBack" title="Back">◀</button><button id="bFwd" title="Forward">▶</button><button id="bReload" title="Reload">⟳</button>
+      <input id="url" type="text" placeholder="URL or search, then Enter" spellcheck="false" autocomplete="off">
+      <button id="bNewTab" title="Open in a new tab">＋</button>
+    </div>
     <div id="tWrap"><canvas id="tCanvas" width="1280" height="720"></canvas></div>
     <div class="row"><input id="tType" type="text" placeholder="Type into the page…" enterkeyhint="send" autocomplete="off"><button id="tEnter" title="Send text + Enter">⏎</button><button id="tBksp" title="Backspace">⌫</button></div>
     <div class="row"><input type="checkbox" id="kTouchLive" checked><label for="kTouchLive">Cubes follow the page live while this is open</label></div>
   </div>
 </div>
 
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+<aside id="side">
+  <div id="sideHead"><b>◆ CONTROLS</b><button id="bSideClose" title="Close">✕</button></div>
+  <div id="sideBody">
+    <details open id="dDet">
+      <summary>DETECTOR</summary>
+      <div id="detLoading" class="help">Loading the 3D engine…</div>
+      <div id="detBody">
+        <section>
+          <div class="seg" id="modeSeg"><button data-m="one" class="on">One color</button><button data-m="multi">Several</button><button data-m="all">All colors</button></div>
+        </section>
+        <section id="secTarget">
+          <label id="lblTarget">Target color</label>
+          <div class="row" style="margin-top:4px">
+            <input type="color" id="cTarget" value="#ef4444">
+            <span id="hex" class="mono">#EF4444</span>
+            <button id="bDrop" title="Pick any color on your screen">Eyedropper</button>
+            <button id="bAdd" class="hide" title="Add this color to the list">＋ Add</button>
+          </div>
+          <div id="palette" class="hide"></div>
+          <div id="swatches"></div>
+        </section>
+        <section id="secRelief" class="hide">
+          <label>Every pixel becomes a cube in its own color.</label>
+          <div class="row" style="margin-top:4px"><label>Relief from</label>
+            <select id="selRelief"><option value="bright">brightness</option><option value="chroma">colorfulness</option><option value="flat">flat</option></select></div>
+        </section>
+        <div id="read">
+          <div class="mono" id="readTxt">—</div>
+          <div style="margin-top:4px;color:var(--dim)">Under cursor: <span id="hover"></span> <span id="hoverHex" class="mono">—</span></div>
+        </div>
+      </div>
+    </details>
 
+    <details id="dTune">
+      <summary>SCAN SETTINGS</summary>
+      <section>
+        <div id="tolBox"><div class="kv"><label>Tolerance (ΔE)</label><span id="vTol"></span></div>
+        <input type="range" id="sTol" min="2" max="60" value="20"></div>
+        <div class="kv"><label>Cubes across</label><span id="vCols"></span></div>
+        <input type="range" id="sCols" min="40" max="200" step="4" value="128">
+        <div class="kv"><label>Scan speed (rows/s)</label><span id="vSpeed"></span></div>
+        <input type="range" id="sSpeed" min="10" max="400" step="5" value="70">
+        <div class="kv"><label>Relief depth</label><span id="vDepth"></span></div>
+        <input type="range" id="sDepth" min="0" max="3" step="0.1" value="1.2">
+        <div class="kv"><label>Detect when ≥ cubes</label><span id="vTrig"></span></div>
+        <input type="range" id="sTrig" min="1" max="500" value="25">
+      </section>
+      <section>
+        <div class="row"><input type="checkbox" id="kLoop" checked><label for="kLoop">Loop scan</label></div>
+        <div class="row"><input type="checkbox" id="kLive"><label for="kLive">Live (whole frame, no sweep)</label></div>
+        <div class="row"><input type="checkbox" id="kTrue" checked><label for="kTrue">Cubes use the page's real pixel color</label></div>
+        <div class="row"><input type="checkbox" id="kGhost"><label for="kGhost">Show unmatched pixels as ghosts</label></div>
+        <div class="row" style="margin-top:6px"><button id="bRescan">Rescan</button><button id="bClear">Clear cubes</button><button id="bCam">Reset view</button></div>
+      </section>
+    </details>
+
+    <details id="dCrawl">
+      <summary>AUTO-BROWSE</summary>
+      <section>
+        <div class="row"><button id="bCrawl">▶ Start auto-browse</button></div>
+        <div class="kv" style="margin-top:6px"><label>Seconds per page</label><span id="vDwell"></span></div>
+        <input type="range" id="sDwell" min="2" max="40" value="6">
+        <div class="row"><input type="checkbox" id="kSame"><label for="kSame">Stay on the same site</label></div>
+        <div class="row"><input type="checkbox" id="kScroll" checked><label for="kScroll">Scroll while scanning</label></div>
+        <div class="row"><label>Max pages</label><input type="number" id="nMax" value="200" min="1" style="width:80px"></div>
+        <div class="mono" id="crawlTxt" style="margin-top:6px;color:var(--dim);white-space:pre-wrap;word-break:break-all">idle</div>
+      </section>
+      <section>
+        <label>URLs to visit (one per line)</label>
+        <textarea id="taUrls" placeholder="https://example.org&#10;news.ycombinator.com&#10;…"></textarea>
+        <div class="row"><button id="bQueue">Add to queue</button><button id="bTabs">Open each in a tab</button></div>
+      </section>
+    </details>
+
+    <details id="dRes">
+      <summary>DETECTIONS</summary>
+      <div class="row"><button id="bCsv">Export CSV</button></div>
+      <ul id="results"></ul>
+    </details>
+
+    <details id="dView">
+      <summary>VIEW &amp; HELP</summary>
+      <div class="row"><label>Chromium viewport</label>
+        <select id="vp">
+          <option value="1280x720">1280×720</option>
+          <option value="1440x900">1440×900</option>
+          <option value="1024x768">1024×768</option>
+          <option value="390x844">390×844 phone</option>
+        </select></div>
+      <div class="help">
+        <b>Chromium panel:</b> tap, swipe, pinch or drag on it to use the page; the text box types into it.<br>
+        <b>3D:</b> drag to orbit, scroll to zoom. Click/scroll/type on the 3D input screen to use the page too. <b>Alt+click</b> it to pick a color.<br>
+        <b>Esc</b> hands the keyboard back.
+      </div>
+    </details>
+  </div>
+</aside>
+<div id="toast"></div>
+
+<script type="module">
 const $ = (id) => document.getElementById(id);
-const clamp = THREE.MathUtils.clamp;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const P = { cols: 128, tol: 20, speed: 70, depth: 1.2, trigger: 25, loop: true, live: false, trueColor: true, ghost: false, relief: 'bright' };
+
+// ============================================================ PART 1 — Chromium (runs first, no three.js needed)
+// The live page lands in srcCanvas. The Chromium panel mirrors it; the 3D engine (part 2) hooks in when loaded.
+const srcCanvas = document.createElement('canvas'); srcCanvas.width = 1280; srcCanvas.height = 720;
+const sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+const hooks = { frame: () => {}, src: () => {}, url: () => {} };
+let hasFrame = false, threeReady = false, activeUrl = '', activeTitle = '', activeTab = null, pageFocus = false;
+function placeholder(msg, sub = '') {
+  sctx.fillStyle = '#0d1016'; sctx.fillRect(0, 0, srcCanvas.width, srcCanvas.height);
+  sctx.fillStyle = '#ffb020'; sctx.font = `bold ${Math.round(srcCanvas.width / 30)}px system-ui`; sctx.textAlign = 'center';
+  sctx.fillText(msg, srcCanvas.width / 2, srcCanvas.height / 2);
+  sctx.fillStyle = '#7d8596'; sctx.font = `${Math.round(srcCanvas.width / 60)}px system-ui`;
+  if (sub) sctx.fillText(sub, srcCanvas.width / 2, srcCanvas.height / 2 + srcCanvas.width / 26);
+  hooks.src(); drawTouch();
+}
+function pixelAt(uv) {
+  const x = clamp(Math.floor(uv.x * srcCanvas.width), 0, srcCanvas.width - 1);
+  const y = clamp(Math.floor((1 - uv.y) * srcCanvas.height), 0, srcCanvas.height - 1);
+  const d = sctx.getImageData(x, y, 1, 1).data;
+  return '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+function setFocus(on) { pageFocus = on; $('focusRing').style.display = on ? 'block' : 'none'; }
+
+// ============================================================ backend link (WebSocket)
+// Text messages are JSON events {ev, data}; binary messages are JPEG frames.
+const qs = new URLSearchParams(location.search);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+if (qs.get('key')) store.set('cv_key', qs.get('key'));
+const SESSION = qs.get('session') || store.get('cv_sid') || (() => { const id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)); store.set('cv_sid', id); return id; })();
+const KEY = qs.get('key') || store.get('cv_key') || '';
+let ws = null, rid = 0, everOpened = false, retry = 0;
+const pending = new Map();
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/api/ws?s=${encodeURIComponent(SESSION)}&key=${encodeURIComponent(KEY)}`);
+  ws.binaryType = 'blob';
+  ws.onopen = () => { everOpened = true; retry = 0; $('conn').className = 'ok'; };
+  ws.onmessage = (e) => {
+    if (typeof e.data !== 'string') return onFrame(e.data);
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    const d = m.data;
+    switch (m.ev) {
+      case 'reply': { const r = pending.get(m.rid); if (r) { pending.delete(m.rid); r(d); } if (d && d.error) toast(d.error); break; }
+      case 'hello': $('vp').value = `${d.viewport.width}x${d.viewport.height}`; break;
+      case 'status': onStatus(d); break;
+      case 'toast': toast(d.text); break;
+      case 'tabs': renderTabs(d); break;
+      case 'crawl': renderCrawl(d); break;
+    }
+  };
+  ws.onclose = () => {
+    $('conn').className = 'bad';
+    for (const r of pending.values()) r({ error: 'disconnected' });
+    pending.clear();
+    if (!hasFrame) placeholder(everOpened ? 'Reconnecting…' : 'Waiting for the backend…', everOpened ? '' : 'Local: npm run local · Cloudflare: check the Worker, or add ?key=… if ACCESS_KEY is set');
+    setTimeout(connect, Math.min(10000, 1000 * 2 ** retry++));
+  };
+}
+function send(cmd) {
+  if (!ws || ws.readyState !== 1) { toast('Not connected to the browser yet'); return Promise.resolve({ error: 'not connected' }); }
+  const id = ++rid;
+  ws.send(JSON.stringify({ ...cmd, rid: id }));
+  return new Promise((res) => pending.set(id, res));
+}
+function onStatus(s) {
+  if (!threeReady) $('state').textContent = { launching: 'STARTING', ready: 'READY', closed: 'SESSION ENDED', error: 'ERROR' }[s.state] || 'READY';
+  $('state').dataset.backend = s.state;
+  if (s.state === 'launching' && !hasFrame) placeholder('Starting Chromium…', 'a fresh browser session takes a few seconds');
+  if (s.state === 'closed' || s.state === 'error') { hasFrame = false; placeholder(s.state === 'error' ? 'Chromium failed to start' : 'Chromium session ended', s.msg || ''); toast(s.msg || s.state); }
+}
+let toastTimer;
+function toast(text) { const t = $('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3500); }
+
+
+// decode newest JPEG frame, drop stale ones
+let decoding = false, nextFrame = null;
+function onFrame(blob) { nextFrame = blob; if (!decoding) decodeNext(); }
+async function decodeNext() {
+  const f = nextFrame; nextFrame = null;
+  if (!f) return;
+  decoding = true;
+  try {
+    const bmp = await createImageBitmap(new Blob([f], { type: 'image/jpeg' }));
+    if (srcCanvas.width !== bmp.width || srcCanvas.height !== bmp.height) { srcCanvas.width = bmp.width; srcCanvas.height = bmp.height; }
+    sctx.drawImage(bmp, 0, 0); bmp.close();
+    hasFrame = true;
+    hooks.frame(srcCanvas.width, srcCanvas.height);
+    drawTouch();
+  } catch {}
+  decoding = false;
+  if (nextFrame) decodeNext();
+}
+
+// ============================================================ UI: browser chrome
+function renderTabs({ active, tabs }) {
+  activeTab = active;
+  const box = $('tabs'); box.innerHTML = '';
+  for (const t of tabs) {
+    const el = document.createElement('div');
+    el.className = 'tab' + (t.id === active ? ' active' : '') + (t.loading ? ' loading' : '');
+    el.title = t.url;
+    el.innerHTML = '<span class="t"></span><span class="x" title="Close">✕</span>';
+    el.querySelector('.t').textContent = t.title || t.url || 'New tab';
+    el.onclick = (e) => { if (e.target.classList.contains('x')) send({ type: 'closeTab', id: t.id }); else if (t.id !== active) send({ type: 'switch', id: t.id }); };
+    box.appendChild(el);
+  }
+  const plus = document.createElement('div'); plus.className = 'tab'; plus.style.minWidth = '34px'; plus.textContent = '＋';
+  plus.onclick = () => send({ type: 'newTab', url: 'about:blank' }).then(() => $('url').focus());
+  box.appendChild(plus);
+  const a = tabs.find(t => t.id === active);
+  if (a) {
+    if (document.activeElement !== $('url')) $('url').value = a.url === 'about:blank' ? '' : a.url;
+    if (a.url !== activeUrl) { activeUrl = a.url; hooks.url(); }
+    activeTitle = a.title;
+    $('tTitle').textContent = a.title || a.url;
+  }
+}
+$('url').addEventListener('keydown', e => { if (e.key === 'Enter') { send({ type: 'navigate', url: $('url').value }); $('url').blur(); } });
+$('bBack').onclick = () => send({ type: 'back' });
+$('bFwd').onclick = () => send({ type: 'forward' });
+$('bReload').onclick = () => send({ type: 'reload' });
+$('bNewTab').onclick = () => send({ type: 'newTab', url: $('url').value || 'about:blank' });
+$('vp').onchange = () => { const [w, h] = $('vp').value.split('x').map(Number); send({ type: 'viewport', width: w, height: h }); };
+
+// auto-browse
+let crawlOn = false;
+function renderCrawl(s) {
+  crawlOn = s.on;
+  $('bCrawl').textContent = s.on ? '■ Stop auto-browse' : '▶ Start auto-browse';
+  $('bCrawl').classList.toggle('on', s.on);
+  $('crawlTxt').textContent = `${s.on ? 'browsing' : 'idle'} · ${s.visited}/${s.max} visited · ${s.queued} queued` + (s.on && s.current ? `\n→ ${s.current}` : '');
+}
+$('bCrawl').onclick = () => send({ type: 'crawl', on: !crawlOn, dwell: +$('sDwell').value, sameOrigin: $('kSame').checked, scroll: $('kScroll').checked, max: +$('nMax').value });
+const pushCrawlCfg = () => send({ type: 'crawl', dwell: +$('sDwell').value, sameOrigin: $('kSame').checked, scroll: $('kScroll').checked, max: +$('nMax').value });
+$('sDwell').addEventListener('input', () => { $('vDwell').textContent = $('sDwell').value; });
+$('sDwell').addEventListener('change', pushCrawlCfg);
+$('vDwell').textContent = $('sDwell').value;
+['kSame', 'kScroll', 'nMax'].forEach(id => $(id).addEventListener('change', pushCrawlCfg));
+const urlLines = () => $('taUrls').value.split(/\s+/).map(s => s.trim()).filter(Boolean);
+$('bQueue').onclick = () => send({ type: 'enqueue', urls: urlLines() }).then(j => j && j.ok && toast(`Queued ${j.added} URL${j.added === 1 ? '' : 's'} — press Start auto-browse`));
+$('bTabs').onclick = async () => { const list = urlLines().slice(0, 30); for (const u of list) await send({ type: 'newTab', url: u }); };
+
+// ============================================================ Chromium panel (2D touch screen)
+// A flat, live copy of the page. Fingers (or the mouse) become real touch events in Chromium,
+// so pages scroll, swipe, tap and pinch natively, and you watch it move here and in 3D.
+const tWin = $('touch'), tCanvas = $('tCanvas'), tctx = tCanvas.getContext('2d'), tWrap = $('tWrap');
+const SIZES = [420, 640, 900, 1200];
+let tSize = 1, touchOpen = false, liveBefore = null;
+function drawTouch() {
+  if (!touchOpen) return;
+  if (tCanvas.width !== srcCanvas.width || tCanvas.height !== srcCanvas.height) { tCanvas.width = srcCanvas.width; tCanvas.height = srcCanvas.height; }
+  tctx.drawImage(srcCanvas, 0, 0);
+}
+function sizeTouch() {
+  const tall = srcCanvas.height > srcCanvas.width;                    // phone viewport: keep it on screen
+  const maxW = tall ? (innerHeight - 260) * srcCanvas.width / srcCanvas.height : innerWidth * 0.94;
+  tWin.style.width = Math.max(240, Math.min(SIZES[tSize], maxW)) + 'px';
+}
+function setTouchOpen(on) {
+  touchOpen = on;
+  tWin.classList.toggle('open', on);
+  $('bTouch').classList.toggle('on', on);
+  if (on) { sizeTouch(); drawTouch(); if ($('kTouchLive').checked) setLive(true); }
+  else if (liveBefore !== null) { setLive(liveBefore, true); }
+}
+function setLive(on, restoring = false) {
+  if (!restoring && liveBefore === null) liveBefore = P.live;
+  if (restoring) liveBefore = null;
+  P.live = on; $('kLive').checked = on;
+}
+$('bTouch').onclick = () => setTouchOpen(!touchOpen);
+$('tClose').onclick = () => setTouchOpen(false);
+$('tMin').onclick = () => tWin.classList.toggle('min');
+$('tSize').onclick = () => { tSize = (tSize + 1) % SIZES.length; sizeTouch(); };
+$('kTouchLive').onchange = () => { if (!touchOpen) return; if ($('kTouchLive').checked) setLive(true); else if (liveBefore !== null) setLive(liveBefore, true); };
+addEventListener('resize', () => { if (touchOpen) sizeTouch(); });
+
+// drag the window by its title bar
+{
+  let drag = null;
+  $('touchBar').addEventListener('pointerdown', (e) => {
+    if (e.target.tagName === 'BUTTON') return;
+    const r = tWin.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    $('touchBar').setPointerCapture(e.pointerId);
+  });
+  $('touchBar').addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    tWin.style.transform = 'none'; tWin.style.bottom = 'auto';
+    tWin.style.left = clamp(e.clientX - drag.dx, 0, innerWidth - 80) + 'px';
+    tWin.style.top = clamp(e.clientY - drag.dy, 0, innerHeight - 40) + 'px';
+  });
+  $('touchBar').addEventListener('pointerup', () => { drag = null; });
+}
+
+// fingers → Chromium touch events (multi-touch, coalesced to one move per animation frame)
+const fingers = new Map();                 // pointerId -> {id, x, y, dot}
+let movesInFlight = 0, moveQueued = false;
+const tPos = (e) => { const r = tCanvas.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) }; };
+const tPoints = () => [...fingers.values()].map(f => ({ id: f.id, x: f.x, y: f.y }));
+function freeId() { const used = new Set([...fingers.values()].map(f => f.id)); let i = 0; while (used.has(i)) i++; return i; }
+function placeDot(f) { f.dot.style.left = (f.x * 100) + '%'; f.dot.style.top = (f.y * 100) + '%'; }
+function queueMove() {
+  if (moveQueued) return;
+  moveQueued = true;
+  requestAnimationFrame(function flush() {
+    if (movesInFlight >= 3) return requestAnimationFrame(flush);   // don't outrun the browser
+    moveQueued = false;
+    if (!fingers.size) return;
+    movesInFlight++;
+    send({ type: 'touch', action: 'move', points: tPoints() }).finally(() => movesInFlight--);
+  });
+}
+tCanvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  e.preventDefault();
+  tCanvas.setPointerCapture(e.pointerId);
+  setFocus(false);
+  const dot = document.createElement('div'); dot.className = 'dot'; tWrap.appendChild(dot);
+  const f = { id: freeId(), ...tPos(e), dot };
+  fingers.set(e.pointerId, f); placeDot(f);
+  send({ type: 'touch', action: 'start', points: tPoints() });
+});
+tCanvas.addEventListener('pointermove', (e) => {
+  const f = fingers.get(e.pointerId);
+  if (!f) return;
+  e.preventDefault();
+  Object.assign(f, tPos(e)); placeDot(f);
+  queueMove();
+});
+function liftFinger(e) {
+  const f = fingers.get(e.pointerId);
+  if (!f) return;
+  Object.assign(f, tPos(e));
+  if (e.type !== 'pointercancel') send({ type: 'touch', action: 'move', points: tPoints() });  // land the last stretch first
+  fingers.delete(e.pointerId); f.dot.remove();
+  send({ type: 'touch', action: e.type === 'pointercancel' ? 'cancel' : 'end', points: tPoints() });
+}
+tCanvas.addEventListener('pointerup', liftFinger);
+tCanvas.addEventListener('pointercancel', liftFinger);
+tCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+// mouse wheel on the touch screen scrolls the page under the cursor
+{
+  let dx = 0, dy = 0, timer = null;
+  tCanvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    dx += e.deltaX; dy += e.deltaY;
+    if (timer) return;
+    const p = tPos(e);
+    timer = setTimeout(() => { timer = null; send({ type: 'mouse', action: 'move', ...p }); send({ type: 'wheel', dx, dy }); dx = dy = 0; }, 50);
+  }, { passive: false });
+}
+// typing (works with phone keyboards too)
+function sendTyped(withEnter) {
+  const v = $('tType').value;
+  if (v) send({ type: 'type', text: v });
+  if (withEnter) send({ type: 'press', key: 'Enter' });
+  $('tType').value = '';
+}
+$('tType').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendTyped(true); } });
+$('tEnter').onclick = () => sendTyped(true);
+$('tBksp').onclick = () => { if ($('tType').value) $('tType').value = $('tType').value.slice(0, -1); else send({ type: 'press', key: 'Backspace' }); };
+// keyboard → page while the page has focus (after clicking the 3D screen)
+window.addEventListener('keydown', e => {
+  if (!pageFocus) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === 'Escape') { setFocus(false); return; }
+  e.preventDefault();
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.key.length === 1 && !mod && !e.altKey) { send({ type: 'type', text: e.key }); return; }
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+  const combo = [e.ctrlKey && 'Control', e.metaKey && 'Meta', e.altKey && 'Alt', e.shiftKey && e.key.length > 1 && 'Shift', e.key === ' ' ? 'Space' : e.key].filter(Boolean).join('+');
+  send({ type: 'press', key: combo });
+});
+$('url').addEventListener('focus', (e) => { setFocus(false); e.target.select(); });
+
+// ============================================================ sidebar (closable, remembers its state)
+function setSide(open) {
+  document.body.classList.toggle('side-open', open);
+  $('bSide').classList.toggle('on', open);
+  store.set('cv_side', open ? '1' : '0');
+}
+$('bSide').onclick = () => setSide(!document.body.classList.contains('side-open'));
+$('bSideClose').onclick = () => setSide(false);
+setSide(store.get('cv_side') === '1');
+
+// Start: the Chromium panel opens and connects before the 3D engine has even downloaded.
+placeholder('Connecting to Chromium…');
+setTouchOpen(true);
+connect();
+
+// ============================================================ PART 2 — the 3D machine (three.js, loaded after)
+const mods = await Promise.all([
+  import('three'),
+  import('three/addons/controls/OrbitControls.js'),
+  import('three/addons/environments/RoomEnvironment.js'),
+  import('three/addons/postprocessing/EffectComposer.js'),
+  import('three/addons/postprocessing/RenderPass.js'),
+  import('three/addons/postprocessing/UnrealBloomPass.js'),
+  import('three/addons/postprocessing/OutputPass.js'),
+]).catch((e) => { console.error(e); return null; });
+if (mods) start3D(...mods);
+else {
+  $('detLoading').textContent = 'The 3D engine could not load (three.js from the CDN). The Chromium panel still works.';
+  $('detBody').classList.add('hide');
+  toast('3D engine could not load. The Chromium panel still works.');
+}
+
+function start3D(THREE, { OrbitControls }, { RoomEnvironment }, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }) {
 const MAXC = 200, MAXR = 200, MAX = MAXC * MAXR;
-const P = { cols: 128, tol: 20, speed: 70, depth: 1.2, trigger: 25, loop: true, live: false, trueColor: true, ghost: false };
 
 // ============================================================ renderer / scene
 const canvas = $('gl');
@@ -259,9 +588,6 @@ const railL = mk(CYL, accent), railR = mk(CYL, accent);
 const capL = mk(BOX, metal), capR = mk(BOX, metal);
 
 // input screen: live Chromium frames
-const srcCanvas = document.createElement('canvas'); srcCanvas.width = 1280; srcCanvas.height = 720;
-const sctx = srcCanvas.getContext('2d');
-let onSrcDrawn = () => {};   // the 2D touch screen mirrors every frame
 let srcTex = makeSrcTex();
 function makeSrcTex() {
   const t = new THREE.CanvasTexture(srcCanvas);
@@ -271,16 +597,6 @@ function makeSrcTex() {
 }
 const screenMat = new THREE.MeshBasicMaterial({ map: srcTex, toneMapped: false, color: 0xeeeeee });
 const screen = mk(new THREE.PlaneGeometry(1, 1), screenMat);
-function placeholder(msg, sub = '') {
-  sctx.fillStyle = '#0d1016'; sctx.fillRect(0, 0, srcCanvas.width, srcCanvas.height);
-  sctx.fillStyle = '#ffb020'; sctx.font = `bold ${Math.round(srcCanvas.width / 30)}px system-ui`; sctx.textAlign = 'center';
-  sctx.fillText(msg, srcCanvas.width / 2, srcCanvas.height / 2);
-  sctx.fillStyle = '#7d8596'; sctx.font = `${Math.round(srcCanvas.width / 60)}px system-ui`;
-  if (sub) sctx.fillText(sub, srcCanvas.width / 2, srcCanvas.height / 2 + srcCanvas.width / 26);
-  srcTex.needsUpdate = true;
-  onSrcDrawn();
-}
-placeholder('Connecting to Chromium…');
 
 // scanner laser on the input screen
 const laserMat = new THREE.MeshBasicMaterial({ color: hdr('#ef4444', 5), toneMapped: false });
@@ -384,7 +700,7 @@ function buildTube() {
 // sampler: page frame -> C×R pixels
 const sampler = document.createElement('canvas');
 const smp = sampler.getContext('2d', { willReadFrequently: true });
-let img = null, frameDirty = false, hasFrame = false;
+let img = null, frameDirty = true;
 function sample() {
   smp.imageSmoothingEnabled = true; smp.imageSmoothingQuality = 'high';
   smp.drawImage(srcCanvas, 0, 0, C, R);
@@ -609,7 +925,7 @@ function renderPalette() {
   const box = $('palette'); box.innerHTML = '';
   if (!palette.length) { box.innerHTML = '<span style="color:var(--dim)">No colors yet: press ＋ Add, a swatch or Alt+click the screen</span>'; return; }
   palette.forEach((t, j) => {
-    const c = document.createElement('span'); c.className = 'chip';
+    const c = document.createElement('span'); c.className = 'pc';
     c.innerHTML = `<i style="background:${t.hex}"></i>${t.hex.toUpperCase()}<b title="Remove">✕</b>`;
     c.querySelector('b').onclick = () => { palette.splice(j, 1); renderPalette(); refreshTargets(); rescan(); renderResults(); };
     box.appendChild(c);
@@ -666,131 +982,6 @@ bindCheck('kGhost', 'ghost', rescan);
 $('bRescan').onclick = rescan;
 $('bClear').onclick = clearCubes;
 $('bCam').onclick = frameCamera;
-$('hL').onclick = () => $('left').classList.toggle('collapsed');
-$('hR').onclick = () => $('right').classList.toggle('collapsed');
-
-// ============================================================ backend link (WebSocket)
-// Text messages are JSON events {ev, data}; binary messages are JPEG frames.
-const qs = new URLSearchParams(location.search);
-const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-if (qs.get('key')) store.set('cv_key', qs.get('key'));
-const SESSION = qs.get('session') || store.get('cv_sid') || (() => { const id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)); store.set('cv_sid', id); return id; })();
-const KEY = qs.get('key') || store.get('cv_key') || '';
-let ws = null, rid = 0, everOpened = false, retry = 0;
-const pending = new Map();
-function connect() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/api/ws?s=${encodeURIComponent(SESSION)}&key=${encodeURIComponent(KEY)}`);
-  ws.binaryType = 'blob';
-  ws.onopen = () => { everOpened = true; retry = 0; $('conn').className = 'ok'; };
-  ws.onmessage = (e) => {
-    if (typeof e.data !== 'string') return onFrame(e.data);
-    let m; try { m = JSON.parse(e.data); } catch { return; }
-    const d = m.data;
-    switch (m.ev) {
-      case 'reply': { const r = pending.get(m.rid); if (r) { pending.delete(m.rid); r(d); } if (d && d.error) toast(d.error); break; }
-      case 'hello': $('vp').value = `${d.viewport.width}x${d.viewport.height}`; break;
-      case 'status': onStatus(d); break;
-      case 'toast': toast(d.text); break;
-      case 'tabs': renderTabs(d); break;
-      case 'crawl': renderCrawl(d); break;
-    }
-  };
-  ws.onclose = () => {
-    $('conn').className = 'bad';
-    for (const r of pending.values()) r({ error: 'disconnected' });
-    pending.clear();
-    if (!hasFrame) placeholder(everOpened ? 'Reconnecting…' : 'Waiting for the backend…', everOpened ? '' : 'Local: npm run local · Cloudflare: check the Worker, or add ?key=… if ACCESS_KEY is set');
-    setTimeout(connect, Math.min(10000, 1000 * 2 ** retry++));
-  };
-}
-function send(cmd) {
-  if (!ws || ws.readyState !== 1) { toast('Not connected to the browser yet'); return Promise.resolve({ error: 'not connected' }); }
-  const id = ++rid;
-  ws.send(JSON.stringify({ ...cmd, rid: id }));
-  return new Promise((res) => pending.set(id, res));
-}
-function onStatus(s) {
-  $('state').dataset.backend = s.state;
-  if (s.state === 'launching' && !hasFrame) placeholder('Starting Chromium…', 'a fresh browser session takes a few seconds');
-  if (s.state === 'closed' || s.state === 'error') { hasFrame = false; placeholder(s.state === 'error' ? 'Chromium failed to start' : 'Chromium session ended', s.msg || ''); toast(s.msg || s.state); }
-}
-let toastTimer;
-function toast(text) { const t = $('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3500); }
-
-let activeUrl = '', activeTitle = '', activeTab = null;
-
-// decode newest JPEG frame, drop stale ones
-let decoding = false, nextFrame = null;
-function onFrame(blob) { nextFrame = blob; if (!decoding) decodeNext(); }
-async function decodeNext() {
-  const f = nextFrame; nextFrame = null;
-  if (!f) return;
-  decoding = true;
-  try {
-    const bmp = await createImageBitmap(new Blob([f], { type: 'image/jpeg' }));
-    if (srcCanvas.width !== bmp.width || srcCanvas.height !== bmp.height) {
-      srcCanvas.width = bmp.width; srcCanvas.height = bmp.height;
-      srcTex.dispose(); srcTex = makeSrcTex(); screenMat.map = srcTex; screenMat.needsUpdate = true;
-    }
-    const a = bmp.width / bmp.height;
-    if (Math.abs(a - srcAspect) > 0.01) layout(a);
-    sctx.drawImage(bmp, 0, 0); bmp.close();
-    srcTex.needsUpdate = true; frameDirty = true; hasFrame = true;
-    onSrcDrawn();
-  } catch {}
-  decoding = false;
-  if (nextFrame) decodeNext();
-}
-
-// ============================================================ UI: browser chrome
-function renderTabs({ active, tabs }) {
-  activeTab = active;
-  const box = $('tabs'); box.innerHTML = '';
-  for (const t of tabs) {
-    const el = document.createElement('div');
-    el.className = 'tab' + (t.id === active ? ' active' : '') + (t.loading ? ' loading' : '');
-    el.title = t.url;
-    el.innerHTML = '<span class="t"></span><span class="x" title="Close">✕</span>';
-    el.querySelector('.t').textContent = t.title || t.url || 'New tab';
-    el.onclick = (e) => { if (e.target.classList.contains('x')) send({ type: 'closeTab', id: t.id }); else if (t.id !== active) send({ type: 'switch', id: t.id }); };
-    box.appendChild(el);
-  }
-  const plus = document.createElement('div'); plus.className = 'tab'; plus.style.minWidth = '34px'; plus.textContent = '＋';
-  plus.onclick = () => send({ type: 'newTab', url: 'about:blank' }).then(() => $('url').focus());
-  box.appendChild(plus);
-  const a = tabs.find(t => t.id === active);
-  if (a) {
-    if (document.activeElement !== $('url')) $('url').value = a.url === 'about:blank' ? '' : a.url;
-    if (a.url !== activeUrl) { activeUrl = a.url; rescan(); }
-    activeTitle = a.title;
-  }
-}
-$('url').addEventListener('keydown', e => { if (e.key === 'Enter') { send({ type: 'navigate', url: $('url').value }); $('url').blur(); } });
-$('bBack').onclick = () => send({ type: 'back' });
-$('bFwd').onclick = () => send({ type: 'forward' });
-$('bReload').onclick = () => send({ type: 'reload' });
-$('bNewTab').onclick = () => send({ type: 'newTab', url: $('url').value || 'about:blank' });
-$('vp').onchange = () => { const [w, h] = $('vp').value.split('x').map(Number); send({ type: 'viewport', width: w, height: h }); };
-
-// auto-browse
-let crawlOn = false;
-function renderCrawl(s) {
-  crawlOn = s.on;
-  $('bCrawl').textContent = s.on ? '■ Stop auto-browse' : '▶ Start auto-browse';
-  $('bCrawl').classList.toggle('on', s.on);
-  $('crawlTxt').textContent = `${s.on ? 'browsing' : 'idle'} · ${s.visited}/${s.max} visited · ${s.queued} queued` + (s.on && s.current ? `\n→ ${s.current}` : '');
-  $('crawlTxt').style.whiteSpace = 'pre-wrap'; $('crawlTxt').style.wordBreak = 'break-all';
-}
-$('bCrawl').onclick = () => send({ type: 'crawl', on: !crawlOn, dwell: +$('sDwell').value, sameOrigin: $('kSame').checked, scroll: $('kScroll').checked, max: +$('nMax').value });
-const pushCrawlCfg = () => send({ type: 'crawl', dwell: +$('sDwell').value, sameOrigin: $('kSame').checked, scroll: $('kScroll').checked, max: +$('nMax').value });
-$('sDwell').addEventListener('input', () => { $('vDwell').textContent = $('sDwell').value; });
-$('sDwell').addEventListener('change', pushCrawlCfg);
-$('vDwell').textContent = $('sDwell').value;
-['kSame', 'kScroll', 'nMax'].forEach(id => $(id).addEventListener('change', pushCrawlCfg));
-const urlLines = () => $('taUrls').value.split(/\s+/).map(s => s.trim()).filter(Boolean);
-$('bQueue').onclick = () => send({ type: 'enqueue', urls: urlLines() }).then(j => j && j.ok && toast(`Queued ${j.added} URL${j.added === 1 ? '' : 's'} — press Start auto-browse`));
-$('bTabs').onclick = async () => { const list = urlLines().slice(0, 30); for (const u of list) await send({ type: 'newTab', url: u }); };
 
 // ============================================================ 3D interaction → Chromium
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -800,14 +991,7 @@ function screenUV(e) {
   const h = ray.intersectObject(screen)[0];
   return h ? h.uv.clone() : null;
 }
-function pixelAt(uv) {
-  const x = clamp(Math.floor(uv.x * srcCanvas.width), 0, srcCanvas.width - 1);
-  const y = clamp(Math.floor((1 - uv.y) * srcCanvas.height), 0, srcCanvas.height - 1);
-  const d = sctx.getImageData(x, y, 1, 1).data;
-  return '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('');
-}
-let overScreen = false, pageFocus = false, pressed = -1, lastUV = null, moveTimer = null, pendingMove = null;
-function setFocus(on) { pageFocus = on; $('focusRing').style.display = on ? 'block' : 'none'; }
+let overScreen = false, pressed = -1, lastUV = null, moveTimer = null, pendingMove = null;
 canvas.addEventListener('contextmenu', e => { if (overScreen) e.preventDefault(); });
 canvas.addEventListener('pointermove', e => {
   const uv = screenUV(e);
@@ -845,19 +1029,6 @@ canvas.addEventListener('wheel', e => {
   wdx += e.deltaX; wdy += e.deltaY;
   if (!wheelTimer) wheelTimer = setTimeout(() => { wheelTimer = null; send({ type: 'wheel', dx: wdx, dy: wdy }); wdx = wdy = 0; }, 50);
 }, { passive: false });
-window.addEventListener('keydown', e => {
-  if (!pageFocus) return;
-  const tag = document.activeElement && document.activeElement.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-  if (e.key === 'Escape') { setFocus(false); return; }
-  e.preventDefault();
-  const mod = e.ctrlKey || e.metaKey;
-  if (e.key.length === 1 && !mod && !e.altKey) { send({ type: 'type', text: e.key }); return; }
-  if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
-  const combo = [e.ctrlKey && 'Control', e.metaKey && 'Meta', e.altKey && 'Alt', e.shiftKey && e.key.length > 1 && 'Shift', e.key === ' ' ? 'Space' : e.key].filter(Boolean).join('+');
-  send({ type: 'press', key: combo });
-});
-$('url').addEventListener('focus', () => setFocus(false));
 
 // ============================================================ camera / resize / loop
 function frameCamera() {
@@ -874,9 +1045,25 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
 });
 
+// hooks from the Chromium part
+hooks.frame = (w, h) => {
+  if (texW !== w || texH !== h) {
+    texW = w; texH = h;
+    srcTex.dispose(); srcTex = makeSrcTex(); screenMat.map = srcTex; screenMat.needsUpdate = true;
+  }
+  if (Math.abs(w / h - srcAspect) > 0.01) layout(w / h);
+  srcTex.needsUpdate = true; frameDirty = true;
+};
+hooks.src = () => { srcTex.needsUpdate = true; frameDirty = true; };
+hooks.url = () => rescan();
+let texW = srcCanvas.width, texH = srcCanvas.height;
+
 setTarget('#ef4444');
-layout(16 / 9);
+layout(srcCanvas.width / srcCanvas.height);
 frameCamera();
+hooks.src();
+threeReady = true;
+$('detLoading').classList.add('hide');
 
 let last = performance.now();
 function tick(now) {
@@ -906,131 +1093,7 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
-// ============================================================ 2D touch screen
-// A flat, live copy of the page. Fingers (or the mouse) become real touch events in Chromium,
-// so pages scroll, swipe, tap and pinch natively, and you watch it move here and in 3D.
-const tWin = $('touch'), tCanvas = $('tCanvas'), tctx = tCanvas.getContext('2d'), tWrap = $('tWrap');
-const SIZES = [360, 560, 820, 1100];
-let tSize = 1, touchOpen = false, liveBefore = null;
-function drawTouch() {
-  if (!touchOpen) return;
-  if (tCanvas.width !== srcCanvas.width || tCanvas.height !== srcCanvas.height) { tCanvas.width = srcCanvas.width; tCanvas.height = srcCanvas.height; }
-  tctx.drawImage(srcCanvas, 0, 0);
 }
-onSrcDrawn = drawTouch;
-function sizeTouch() {
-  const tall = srcCanvas.height > srcCanvas.width;                    // phone viewport: keep it on screen
-  const maxW = tall ? (innerHeight - 200) * srcCanvas.width / srcCanvas.height : innerWidth * 0.94;
-  tWin.style.width = Math.max(240, Math.min(SIZES[tSize], maxW)) + 'px';
-}
-function setTouchOpen(on) {
-  touchOpen = on;
-  tWin.classList.toggle('open', on);
-  $('bTouch').classList.toggle('on', on);
-  if (on) { sizeTouch(); drawTouch(); if ($('kTouchLive').checked) setLive(true); }
-  else if (liveBefore !== null) { setLive(liveBefore, true); }
-}
-function setLive(on, restoring = false) {
-  if (!restoring && liveBefore === null) liveBefore = P.live;
-  if (restoring) liveBefore = null;
-  P.live = on; $('kLive').checked = on;
-}
-$('bTouch').onclick = () => setTouchOpen(!touchOpen);
-$('tClose').onclick = () => setTouchOpen(false);
-$('tMin').onclick = () => tWin.classList.toggle('min');
-$('tSize').onclick = () => { tSize = (tSize + 1) % SIZES.length; sizeTouch(); };
-$('kTouchLive').onchange = () => { if (!touchOpen) return; if ($('kTouchLive').checked) setLive(true); else if (liveBefore !== null) setLive(liveBefore, true); };
-addEventListener('resize', () => { if (touchOpen) sizeTouch(); });
-
-// drag the window by its title bar
-{
-  let drag = null;
-  $('touchBar').addEventListener('pointerdown', (e) => {
-    if (e.target.tagName === 'BUTTON') return;
-    const r = tWin.getBoundingClientRect();
-    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    $('touchBar').setPointerCapture(e.pointerId);
-  });
-  $('touchBar').addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    tWin.style.transform = 'none'; tWin.style.bottom = 'auto';
-    tWin.style.left = clamp(e.clientX - drag.dx, 0, innerWidth - 80) + 'px';
-    tWin.style.top = clamp(e.clientY - drag.dy, 0, innerHeight - 40) + 'px';
-  });
-  $('touchBar').addEventListener('pointerup', () => { drag = null; });
-}
-
-// fingers → Chromium touch events (multi-touch, coalesced to one move per animation frame)
-const fingers = new Map();                 // pointerId -> {id, x, y, dot}
-let movesInFlight = 0, moveQueued = false;
-const tPos = (e) => { const r = tCanvas.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) }; };
-const tPoints = () => [...fingers.values()].map(f => ({ id: f.id, x: f.x, y: f.y }));
-function freeId() { const used = new Set([...fingers.values()].map(f => f.id)); let i = 0; while (used.has(i)) i++; return i; }
-function placeDot(f) { f.dot.style.left = (f.x * 100) + '%'; f.dot.style.top = (f.y * 100) + '%'; }
-function queueMove() {
-  if (moveQueued) return;
-  moveQueued = true;
-  requestAnimationFrame(function flush() {
-    if (movesInFlight >= 3) return requestAnimationFrame(flush);   // don't outrun the browser
-    moveQueued = false;
-    if (!fingers.size) return;
-    movesInFlight++;
-    send({ type: 'touch', action: 'move', points: tPoints() }).finally(() => movesInFlight--);
-  });
-}
-tCanvas.addEventListener('pointerdown', (e) => {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-  e.preventDefault();
-  tCanvas.setPointerCapture(e.pointerId);
-  setFocus(false);
-  const dot = document.createElement('div'); dot.className = 'dot'; tWrap.appendChild(dot);
-  const f = { id: freeId(), ...tPos(e), dot };
-  fingers.set(e.pointerId, f); placeDot(f);
-  send({ type: 'touch', action: 'start', points: tPoints() });
-});
-tCanvas.addEventListener('pointermove', (e) => {
-  const f = fingers.get(e.pointerId);
-  if (!f) return;
-  e.preventDefault();
-  Object.assign(f, tPos(e)); placeDot(f);
-  queueMove();
-});
-function liftFinger(e) {
-  const f = fingers.get(e.pointerId);
-  if (!f) return;
-  Object.assign(f, tPos(e));
-  if (e.type !== 'pointercancel') send({ type: 'touch', action: 'move', points: tPoints() });  // land the last stretch first
-  fingers.delete(e.pointerId); f.dot.remove();
-  send({ type: 'touch', action: e.type === 'pointercancel' ? 'cancel' : 'end', points: tPoints() });
-}
-tCanvas.addEventListener('pointerup', liftFinger);
-tCanvas.addEventListener('pointercancel', liftFinger);
-tCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
-// mouse wheel on the touch screen scrolls the page under the cursor
-{
-  let dx = 0, dy = 0, timer = null;
-  tCanvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    dx += e.deltaX; dy += e.deltaY;
-    if (timer) return;
-    const p = tPos(e);
-    timer = setTimeout(() => { timer = null; send({ type: 'mouse', action: 'move', ...p }); send({ type: 'wheel', dx, dy }); dx = dy = 0; }, 50);
-  }, { passive: false });
-}
-// typing (works with phone keyboards too)
-function sendTyped(withEnter) {
-  const v = $('tType').value;
-  if (v) send({ type: 'type', text: v });
-  if (withEnter) send({ type: 'press', key: 'Enter' });
-  $('tType').value = '';
-}
-$('tType').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendTyped(true); } });
-$('tEnter').onclick = () => sendTyped(true);
-$('tBksp').onclick = () => { if ($('tType').value) $('tType').value = $('tType').value.slice(0, -1); else send({ type: 'press', key: 'Backspace' }); };
-// touch-first devices open the touch screen right away
-if (matchMedia('(pointer: coarse)').matches) setTouchOpen(true);
-
-connect();
 </script>
 </body>
 </html>

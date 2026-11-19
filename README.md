@@ -55,17 +55,24 @@ Environment variables:
 
 ## Use
 
-- **Browse.** Use the tab strip, back/forward/reload and the URL bar (a URL, or words to search). Click, scroll and type directly on the 3D input screen. `Esc` hands the keyboard back.
-- **Color modes.**
-  - **One color** detects a single target color.
-  - **Several** detects any color in a list of up to 8. Swatches, Alt+click and the eyedropper add colors to the list.
-  - **All colors** turns every pixel into a cube in its own color, so the whole page becomes a live 3D cube picture. Relief comes from brightness, colorfulness or nothing (flat).
-- **Pick a color.** Use the swatches or color input, **Alt+click** the input screen, or use **Eyedropper** to grab any color on your monitor.
-- **✋ Touch screen.** A floating 2D copy of the live page that you can drag, resize and minimize. Fingers become real touch events in Chromium, so pages scroll with momentum, swipe, tap and pinch-zoom natively. A mouse drag works as a finger too. A text box types into the page, which also works with phone keyboards. While the window is open the cubes update live, so the 3D wall follows the page as it moves. The window opens automatically on touch devices.
-- **Detector.** Tolerance is the CIE Lab ΔE distance. You can also set the resolution (cubes across), scan speed, relief (better matches stick out further), loop or live mode, real-pixel or target-color cubes, and ghosts for unmatched pixels.
-- **Auto-browse.** Chromium follows links from page to page. You set the dwell time and the max number of pages, and can tell it to stay on the same site or scroll while it scans. You can also paste a list of URLs to queue them, or open each one in its own tab.
-- **Detections.** Every page the machine scans is ranked by how much of the color it found. Click a row to go back to that page, or export the list as CSV.
-- **Sessions.** Each browser gets its own Chromium session. Open `?session=name` on several devices to share one session.
+The screen has three parts:
+- **Chromium panel** (bottom left, opens first). This is the live website with its tabs, back/forward/reload and URL bar. Tap, swipe, pinch or drag on it to use the page; the mouse works as a finger. The text box types into the page. You can drag the panel by its title bar, resize it (⤢), minimize it (–) or hide it (✕), and bring it back with **▣ Chromium**.
+- **3D machine** (background). Drag to orbit and scroll to zoom. You can also click, scroll and type on the 3D input screen. **Alt+click** it to pick a color, and press `Esc` to hand the keyboard back.
+- **☰ Controls** (sidebar on the right). It closes with ✕ and remembers whether it was open. Its sections:
+  - **Detector:** the color mode.
+    - **One color** detects a single target color.
+    - **Several** detects any color in a list of up to 8. Swatches, Alt+click and the eyedropper add colors to the list.
+    - **All colors** turns every pixel into a cube in its own color. Relief comes from brightness, colorfulness or nothing (flat).
+  - **Scan settings:** tolerance (CIE Lab ΔE), cubes across, speed, relief depth, loop or live mode, real-pixel or target-color cubes, and ghosts for unmatched pixels.
+  - **Auto-browse:** Chromium follows links from page to page. You set the dwell time and the max number of pages, and can tell it to stay on the same site or scroll while it scans. You can also paste a list of URLs to queue them or open each one in a tab.
+  - **Detections:** pages ranked by how much of the color they contain. Click a row to go back to that page, or export as CSV.
+  - **View & help:** the Chromium viewport size (including a phone size).
+
+The status chip at the top right shows the connection, the detection lamp and what the machine is doing.
+Each browser gets its own Chromium session. Open `?session=name` on several devices to share one.
+
+The Chromium panel loads and connects before three.js has finished downloading. If the CDN can't
+be reached, browsing still works without the 3D machine.
 
 ## How it works
 
