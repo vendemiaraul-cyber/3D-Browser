@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chroma Voxelizer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<style>
+  :root { --bg:#0b0d12; --glass:rgba(16,19,26,.86); --line:#262b36; --txt:#d8dde8; --dim:#7d8596; --acc:#ffb020; --tgt:#ef4444; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt); font:13px/1.35 ui-sans-serif,system-ui,sans-serif; overflow:hidden; }
+  canvas#gl { position:fixed; inset:0; display:block; }
+  button, input, select, textarea { font:inherit; color:var(--txt); }
+  button { background:#1c212b; border:1px solid var(--line); border-radius:7px; padding:5px 9px; cursor:pointer; }
+  button:hover { border-color:#3a4252; background:#232937; }
+  button.on { background:var(--acc); color:#111; border-color:var(--acc); font-weight:600; }
+  input[type=text], input[type=number], textarea, select { background:#0f1218; border:1px solid var(--line); border-radius:7px; padding:5px 8px; }
+  input[type=range] { width:100%; accent-color:var(--acc); }
+  input[type=checkbox] { accent-color:var(--acc); }
+  label { color:var(--dim); }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+
+  /* browser chrome */
+  #chrome { position:fixed; left:0; right:0; top:0; z-index:5; background:var(--glass); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  #tabs { display:flex; gap:4px; padding:6px 8px 0; overflow-x:auto; scrollbar-width:none; }
+  .tab { display:flex; align-items:center; gap:6px; max-width:210px; min-width:90px; padding:5px 8px; border:1px solid var(--line); border-bottom:none; border-radius:8px 8px 0 0; background:#141821; cursor:pointer; white-space:nowrap; }
+  .tab.active { background:#232937; border-color:#3a4252; }
+  .tab .t { overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .tab .x { color:var(--dim); padding:0 2px; border-radius:4px; }
+  .tab .x:hover { color:#fff; background:#3a4252; }
+  .tab.loading .t::before { content:'◌ '; color:var(--acc); }
+  #bar { display:flex; gap:6px; padding:6px 8px; align-items:center; }
+  #url { flex:1; min-width:120px; }
+  #conn { width:9px; height:9px; border-radius:50%; background:#555; flex:none; }
+  #conn.ok { background:#22c55e; box-shadow:0 0 8px #22c55e; }
+  #conn.bad { background:#ef4444; }
+
+  /* side panels */
+  .panel { position:fixed; top:92px; z-index:4; width:270px; max-height:calc(100% - 104px); overflow:auto; background:var(--glass); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  #left { left:10px; } #right { right:10px; }
+  .panel h2 { margin:0 0 8px; font-size:11px; letter-spacing:.14em; color:var(--acc); font-weight:700; cursor:pointer; user-select:none; }
+  .panel.collapsed > :not(h2) { display:none; }
+  .panel section { margin:0 0 10px; }
+  .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .kv { display:flex; justify-content:space-between; }
+  .kv span:last-child { color:var(--txt); font-family:ui-monospace,monospace; }
+  #swatches { display:flex; gap:5px; margin-top:6px; flex-wrap:wrap; }
+  #swatches b { width:20px; height:20px; border-radius:5px; border:1px solid #0006; cursor:pointer; display:block; }
+  input[type=color] { width:44px; height:30px; padding:0; border:1px solid var(--line); border-radius:7px; background:none; }
+  #read { padding:8px; border:1px solid var(--line); border-radius:9px; background:#0f1218; }
+  #lamp { display:inline-block; width:10px; height:10px; border-radius:50%; background:#333; margin-right:6px; vertical-align:-1px; }
+  #hover { display:inline-block; width:14px; height:14px; border-radius:4px; border:1px solid #0008; vertical-align:-3px; }
+  #results { list-style:none; margin:6px 0 0; padding:0; }
+  #results li { display:grid; grid-template-columns:1fr auto; gap:2px 8px; padding:5px 6px; border-radius:7px; cursor:pointer; }
+  #results li:hover { background:#1c212b; }
+  #results .u { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #results .p { font-family:ui-monospace,monospace; color:var(--acc); }
+  #results .bar { grid-column:1/3; height:3px; background:#1c212b; border-radius:2px; overflow:hidden; }
+  #results .bar i { display:block; height:100%; background:var(--tgt); }
+  textarea { width:100%; height:64px; resize:vertical; }
+  #hint { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); z-index:3; color:var(--dim); font-size:12px; background:var(--glass); padding:5px 12px; border-radius:20px; border:1px solid var(--line); white-space:nowrap; }
+  #hint b { color:var(--txt); font-weight:600; }
+  #toast { position:fixed; bottom:48px; left:50%; transform:translateX(-50%); z-index:6; background:#2a1416; border:1px solid #6b2a2f; color:#fecaca; padding:7px 12px; border-radius:9px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:70vw; }
+  #toast.show { opacity:1; }
+  #focusRing { position:fixed; z-index:3; top:96px; left:50%; transform:translateX(-50%); color:#111; background:var(--acc); font-weight:600; padding:3px 10px; border-radius:20px; font-size:12px; display:none; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="chrome">
+  <div id="tabs"></div>
+  <div id="bar">
+    <span id="conn" title="Chromium connection"></span>
+    <button id="bBack" title="Back">◀</button>
+    <button id="bFwd" title="Forward">▶</button>
+    <button id="bReload" title="Reload">⟳</button>
+    <input id="url" type="text" placeholder="Type a URL or search, then Enter" spellcheck="false">
+    <button id="bNewTab" title="Open in a new tab">＋ Tab</button>
+    <select id="vp" title="Chromium viewport">
+      <option value="1280x720">1280×720</option>
+      <option value="1440x900">1440×900</option>
+      <option value="1024x768">1024×768</option>
+      <option value="390x844">390×844 phone</option>
+    </select>
+  </div>
+</div>
+<div id="focusRing">Keyboard → page · Esc to release</div>
+
+<div id="left" class="panel">
+  <h2 id="hL">◆ DETECTOR</h2>
+  <section>
+    <label>Target color</label>
+    <div class="row" style="margin-top:4px">
+      <input type="color" id="cTarget" value="#ef4444">
+      <span id="hex" class="mono">#EF4444</span>
+      <button id="bDrop" title="Pick any color on your screen">Eyedropper</button>
+    </div>
+    <div id="swatches"></div>
+  </section>
+  <section>
+    <div class="kv"><label>Tolerance (ΔE)</label><span id="vTol"></span></div>
+    <input type="range" id="sTol" min="2" max="60" value="20">
+    <div class="kv"><label>Cubes across</label><span id="vCols"></span></div>
+    <input type="range" id="sCols" min="40" max="200" step="4" value="128">
+    <div class="kv"><label>Scan speed (rows/s)</label><span id="vSpeed"></span></div>
+    <input type="range" id="sSpeed" min="10" max="400" step="5" value="70">
+    <div class="kv"><label>Relief by match strength</label><span id="vDepth"></span></div>
+    <input type="range" id="sDepth" min="0" max="3" step="0.1" value="1.2">
+    <div class="kv"><label>Detect when ≥ cubes</label><span id="vTrig"></span></div>
+    <input type="range" id="sTrig" min="1" max="500" value="25">
+  </section>
+  <section>
+    <div class="row"><input type="checkbox" id="kLoop" checked><label for="kLoop">Loop scan</label></div>
+    <div class="row"><input type="checkbox" id="kLive"><label for="kLive">Live (whole frame, no sweep)</label></div>
+    <div class="row"><input type="checkbox" id="kTrue" checked><label for="kTrue">Cubes use the page's real pixel color</label></div>
+    <div class="row"><input type="checkbox" id="kGhost"><label for="kGhost">Show unmatched pixels as ghosts</label></div>
+    <div class="row" style="margin-top:6px"><button id="bRescan">Rescan</button><button id="bClear">Clear cubes</button><button id="bCam">Reset view</button></div>
+  </section>
+  <div id="read">
+    <div><span id="lamp"></span><b id="state">SCANNING</b></div>
+    <div class="mono" id="readTxt" style="margin-top:4px">—</div>
+    <div style="margin-top:4px;color:var(--dim)">Under cursor: <span id="hover"></span> <span id="hoverHex" class="mono">—</span></div>
+  </div>
+</div>
+
+<div id="right" class="panel">
+  <h2 id="hR">◆ AUTO-BROWSE</h2>
+  <section>
+    <div class="row"><button id="bCrawl">▶ Start auto-browse</button></div>
+    <div class="kv" style="margin-top:6px"><label>Seconds per page</label><span id="vDwell"></span></div>
+    <input type="range" id="sDwell" min="2" max="40" value="6">
+    <div class="row"><input type="checkbox" id="kSame"><label for="kSame">Stay on the same site</label></div>
+    <div class="row"><input type="checkbox" id="kScroll" checked><label for="kScroll">Scroll while scanning</label></div>
+    <div class="row"><label>Max pages</label><input type="number" id="nMax" value="200" min="1" style="width:80px"></div>
+    <div class="mono" id="crawlTxt" style="margin-top:6px;color:var(--dim)">idle</div>
+  </section>
+  <section>
+    <label>URLs to visit (one per line)</label>
+    <textarea id="taUrls" placeholder="https://example.org&#10;news.ycombinator.com&#10;…"></textarea>
+    <div class="row"><button id="bQueue">Add to queue</button><button id="bTabs">Open each in a tab</button></div>
+  </section>
+  <section>
+    <div class="kv"><label>Detections by page</label><span><button id="bCsv" style="padding:2px 7px">CSV</button></span></div>
+    <ul id="results"></ul>
+  </section>
+</div>
+
+<div id="hint">Drag to orbit · <b>Click/scroll/type on the input screen</b> to use the page · <b>Alt+click</b> it to pick a color</div>
+<div id="toast"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = (id) => document.getElementById(id);
+const clamp = THREE.MathUtils.clamp;
+const MAXC = 200, MAXR = 200, MAX = MAXC * MAXR;
+const P = { cols: 128, tol: 20, speed: 70, depth: 1.2, trigger: 25, loop: true, live: false, trueColor: true, ghost: false };
+
+// ============================================================ renderer / scene
+const canvas = $('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0d12);
+scene.fog = new THREE.Fog(0x0b0d12, 40, 90);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.6;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 300);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.52;
+
+scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x1a1a1a, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 2.0); sun.position.set(6, 14, 12); scene.add(sun);
+const rim = new THREE.DirectionalLight(0x88aaff, 0.8); rim.position.set(-10, 6, -8); scene.add(rim);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.45, 1.0);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// floor
+const floor = new THREE.Mesh(new THREE.CircleGeometry(60, 64), new THREE.MeshStandardMaterial({ color: 0x0e1117, roughness: 0.9 }));
+floor.rotation.x = -Math.PI / 2; scene.add(floor);
+const grid = new THREE.GridHelper(120, 120, 0x1b2030, 0x141822); grid.position.y = 0.002; scene.add(grid);
+
+// ============================================================ the machine
+const metal = new THREE.MeshStandardMaterial({ color: 0x2b303b, metalness: 0.75, roughness: 0.32 });
+const dark = new THREE.MeshStandardMaterial({ color: 0x12151b, metalness: 0.3, roughness: 0.65 });
+const accent = new THREE.MeshStandardMaterial({ color: 0xffb020, metalness: 0.4, roughness: 0.4 });
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+const CYL = new THREE.CylinderGeometry(0.07, 0.07, 1, 14);
+const mk = (geo, mat, parent = scene) => { const m = new THREE.Mesh(geo, mat); parent.add(m); return m; };
+const hdr = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
+
+const base = mk(BOX, metal), stripe = mk(BOX, accent);
+const bezel = mk(BOX, dark), back = mk(BOX, dark);
+const neckL = mk(BOX, metal), neckR = mk(BOX, metal);
+const railL = mk(CYL, accent), railR = mk(CYL, accent);
+const capL = mk(BOX, metal), capR = mk(BOX, metal);
+
+// input screen: live Chromium frames
+const srcCanvas = document.createElement('canvas'); srcCanvas.width = 1280; srcCanvas.height = 720;
+const sctx = srcCanvas.getContext('2d');
+let srcTex = makeSrcTex();
+function makeSrcTex() {
+  const t = new THREE.CanvasTexture(srcCanvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+const screenMat = new THREE.MeshBasicMaterial({ map: srcTex, toneMapped: false, color: 0xeeeeee });
+const screen = mk(new THREE.PlaneGeometry(1, 1), screenMat);
+function placeholder(msg) {
+  sctx.fillStyle = '#0d1016'; sctx.fillRect(0, 0, srcCanvas.width, srcCanvas.height);
+  sctx.fillStyle = '#ffb020'; sctx.font = 'bold 42px system-ui'; sctx.textAlign = 'center';
+  sctx.fillText(msg, srcCanvas.width / 2, srcCanvas.height / 2);
+  sctx.fillStyle = '#7d8596'; sctx.font = '24px system-ui';
+  sctx.fillText('start the backend:  npm start', srcCanvas.width / 2, srcCanvas.height / 2 + 50);
+  srcTex.needsUpdate = true;
+}
+placeholder('Connecting to Chromium…');
+
+// scanner laser on the input screen
+const laserMat = new THREE.MeshBasicMaterial({ color: hdr('#ef4444', 5), toneMapped: false });
+const laser = mk(new THREE.BoxGeometry(1, 0.035, 0.035), laserMat);
+const sheetMat = new THREE.MeshBasicMaterial({ color: hdr('#ef4444', 1), transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+const sheet = mk(new THREE.PlaneGeometry(1, 1), sheetMat); // fan of light from emitter to scan line
+
+// print head on the output wall
+const head = new THREE.Group(); scene.add(head);
+const headBar = mk(BOX, metal, head);
+const nozzle = new THREE.Group(); head.add(nozzle);
+const cone = mk(new THREE.ConeGeometry(0.16, 0.42, 20).rotateX(-Math.PI / 2), accent, nozzle);
+const nozzleBody = mk(new THREE.BoxGeometry(0.5, 0.5, 0.4), dark, nozzle); nozzleBody.position.z = 0.35;
+const tipMat = new THREE.MeshBasicMaterial({ color: hdr('#ef4444', 6), toneMapped: false });
+const tip = mk(new THREE.SphereGeometry(0.06, 12, 8), tipMat, nozzle); tip.position.z = -0.22;
+const beamMat = new THREE.MeshBasicMaterial({ color: hdr('#ef4444', 4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const beam = mk(new THREE.CylinderGeometry(0.022, 0.022, 1, 8).rotateX(Math.PI / 2), beamMat);
+
+// data conduit + packets
+const tube = mk(new THREE.BufferGeometry(), metal);
+let curve = null;
+const packetMat = new THREE.MeshBasicMaterial({ color: hdr('#ef4444', 5), toneMapped: false });
+const packets = Array.from({ length: 10 }, () => mk(new THREE.SphereGeometry(0.1, 12, 8), packetMat));
+
+// detection lamp
+const lampMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: new THREE.Color('#ef4444'), emissiveIntensity: 0.4, roughness: 0.3 });
+const lamp = mk(new THREE.SphereGeometry(0.32, 24, 16), lampMat);
+const lampRing = mk(new THREE.TorusGeometry(0.38, 0.06, 10, 32), metal);
+
+// front labels
+function label(text) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffb020'; g.font = 'bold 34px ui-monospace,monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 256, 34);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return mk(new THREE.PlaneGeometry(3.2, 0.4), new THREE.MeshBasicMaterial({ map: t, transparent: true, toneMapped: false }));
+}
+const labIn = label('INPUT · CHROMIUM'), labOut = label('OUTPUT · VOXELS');
+
+// ============================================================ voxels
+const voxMat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.05 });
+const vox = new THREE.InstancedMesh(BOX, voxMat, MAX);
+vox.frustumCulled = false;
+vox.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+vox.setColorAt(0, new THREE.Color(1, 1, 1));
+vox.instanceColor.setUsage(THREE.DynamicDrawUsage);
+vox.count = 0;
+scene.add(vox);
+const MA = vox.instanceMatrix.array, CA = vox.instanceColor.array;
+const cur = new Float32Array(MAX), tgt = new Float32Array(MAX), zoff = new Float32Array(MAX), str = new Float32Array(MAX);
+const bx = new Float32Array(MAX), by = new Float32Array(MAX);
+const matched = new Uint8Array(MAX);
+let matchCount = 0;
+
+// ============================================================ layout
+const H = 5.4, GAP = 1.8, FACE = 0.16;
+let srcAspect = 16 / 9, aspect = 16 / 9, W = H * aspect;
+let C = 0, R = 0, N = 0, pitch = 0, cubeS = 0, top = 0, headZ = 2.5;
+const Lc = new THREE.Vector3(), Rc = new THREE.Vector3();
+
+function layout(a) {
+  srcAspect = a;
+  aspect = clamp(a, 0.45, 2.4);
+  W = H * aspect;
+  Lc.set(-(W / 2 + GAP / 2), 1.75 + H / 2, 0);
+  Rc.set(W / 2 + GAP / 2, 1.75 + H / 2, 0);
+  top = Lc.y + H / 2;
+  screen.scale.set(W, H, 1); screen.position.set(Lc.x, Lc.y, FACE);
+  bezel.scale.set(W + 0.5, H + 0.5, 0.3); bezel.position.copy(Lc);
+  back.scale.set(W + 0.5, H + 0.5, 0.3); back.position.copy(Rc);
+  const bw = 2 * W + GAP + 3;
+  base.scale.set(bw, 0.9, 4.6); base.position.set(0, 0.45, 1.1);
+  stripe.scale.set(bw + 0.02, 0.08, 4.62); stripe.position.set(0, 0.86, 1.1);
+  neckL.scale.set(1.4, 0.9, 0.7); neckL.position.set(Lc.x, 1.32, 0);
+  neckR.scale.set(1.4, 0.9, 0.7); neckR.position.set(Rc.x, 1.32, 0);
+  laser.scale.x = W + 0.3;
+  headBar.scale.set(W + 1.0, 0.16, 0.22);
+  lamp.position.set(0, 1.25, 2.9); lampRing.position.set(0, 1.25, 2.9);
+  labIn.position.set(Lc.x, 0.45, 3.41); labOut.position.set(Rc.x, 0.45, 3.41);
+  buildTube();
+  placeRails();
+  resizeGrid();
+}
+function placeRails() {
+  headZ = FACE + 0.25 + P.depth + 0.9;
+  const y0 = 0.9, y1 = top + 0.6;
+  for (const [rail, cap, s] of [[railL, capL, -1], [railR, capR, 1]]) {
+    rail.scale.set(1, y1 - y0, 1); rail.position.set(Rc.x + s * (W / 2 + 0.5), (y0 + y1) / 2, headZ);
+    cap.scale.set(0.3, 0.2, headZ + 0.2); cap.position.set(Rc.x + s * (W / 2 + 0.5), y1, headZ / 2);
+  }
+}
+function buildTube() {
+  const V = THREE.Vector3;
+  const a = new V(Lc.x + W * 0.3, top + 0.2, -0.05), b = new V(Rc.x - W * 0.3, top + 0.2, -0.05);
+  curve = new THREE.CatmullRomCurve3([a, new V(a.x, top + 1.3, -0.2), new V(0, top + 2.2, -0.4), new V(b.x, top + 1.3, -0.2), b]);
+  tube.geometry.dispose();
+  tube.geometry = new THREE.TubeGeometry(curve, 90, 0.13, 12, false);
+}
+
+// sampler: page frame -> C×R pixels
+const sampler = document.createElement('canvas');
+const smp = sampler.getContext('2d', { willReadFrequently: true });
+let img = null, frameDirty = false, hasFrame = false;
+function sample() {
+  smp.imageSmoothingEnabled = true; smp.imageSmoothingQuality = 'high';
+  smp.drawImage(srcCanvas, 0, 0, C, R);
+  img = smp.getImageData(0, 0, C, R).data;
+}
+
+function resizeGrid() {
+  C = P.cols; R = Math.round(C / aspect);
+  if (R > MAXR) { R = MAXR; C = Math.round(MAXR * aspect); }
+  C = clamp(C, 8, MAXC); R = Math.max(4, R);
+  N = C * R; pitch = W / C; cubeS = pitch * 0.84;
+  sampler.width = C; sampler.height = R; img = null; frameDirty = true;
+  const x0 = Rc.x - W / 2 + pitch / 2, y0 = top - pitch / 2;
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) { const i = r * C + c; bx[i] = x0 + c * pitch; by[i] = y0 - r * pitch; }
+  cur.fill(0); tgt.fill(0); zoff.fill(0); str.fill(0); matched.fill(0); MA.fill(0);
+  matchCount = 0; vox.count = N;
+  rescan();
+}
+
+// ============================================================ color detection (CIE Lab ΔE76)
+const LIN = new Float32Array(256);
+for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+const fLab = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+function toLab(r, g, b, out) {
+  const R_ = LIN[r], G_ = LIN[g], B_ = LIN[b];
+  const x = fLab((R_ * 0.4124 + G_ * 0.3576 + B_ * 0.1805) / 0.95047);
+  const y = fLab(R_ * 0.2126 + G_ * 0.7152 + B_ * 0.0722);
+  const z = fLab((R_ * 0.0193 + G_ * 0.1192 + B_ * 0.9505) / 1.08883);
+  out[0] = 116 * y - 16; out[1] = 500 * (x - y); out[2] = 200 * (y - z);
+  return out;
+}
+const T = { hex: '#ef4444', rgb: [239, 68, 68], lab: [0, 0, 0] };
+const tmpLab = [0, 0, 0];
+let lastHitX = null;
+
+function processRows(a, b) {
+  if (!img) return 0;
+  let hits = 0;
+  const tol = P.tol, d = img, tl = T.lab, [tr, tg, tb] = T.rgb;
+  for (let r = a; r < b; r++) {
+    for (let c = 0; c < C; c++) {
+      const i = r * C + c, o = i * 4;
+      const pr = d[o], pg = d[o + 1], pb = d[o + 2];
+      toLab(pr, pg, pb, tmpLab);
+      const dl = tmpLab[0] - tl[0], da = tmpLab[1] - tl[1], db = tmpLab[2] - tl[2];
+      const de = Math.sqrt(dl * dl + da * da + db * db);
+      const k = i * 3;
+      if (de <= tol) {
+        str[i] = 0.3 + 0.7 * (1 - de / tol);
+        tgt[i] = 1;
+        if (!matched[i]) { matched[i] = 1; matchCount++; zoff[i] = headZ - FACE - 0.6; cur[i] = 0.15; }
+        const cr = P.trueColor ? pr : tr, cg = P.trueColor ? pg : tg, cb = P.trueColor ? pb : tb;
+        CA[k] = LIN[cr]; CA[k + 1] = LIN[cg]; CA[k + 2] = LIN[cb];
+        hits++; lastHitX = bx[i];
+      } else {
+        if (matched[i]) { matched[i] = 0; matchCount--; }
+        if (P.ghost) { tgt[i] = 0.35; str[i] = 0; CA[k] = LIN[pr] * 0.35; CA[k + 1] = LIN[pg] * 0.35; CA[k + 2] = LIN[pb] * 0.35; }
+        else tgt[i] = 0;
+      }
+    }
+  }
+  vox.instanceColor.needsUpdate = true;
+  return hits;
+}
+
+function updateVoxels(dt) {
+  const k = 1 - Math.exp(-dt * 10), kz = 1 - Math.exp(-dt * 7);
+  const depth = P.depth;
+  for (let i = 0; i < N; i++) {
+    let s = cur[i];
+    const t = tgt[i];
+    if (s !== t) { s += (t - s) * k; if (Math.abs(t - s) < 0.002) s = t; cur[i] = s; }
+    if (zoff[i] > 0.001) zoff[i] -= zoff[i] * kz; else zoff[i] = 0;
+    const o = i * 16;
+    if (s < 0.002) { MA[o] = MA[o + 5] = MA[o + 10] = 0; MA[o + 15] = 1; continue; }
+    const sxy = cubeS * s, sz = (cubeS + depth * str[i]) * s;
+    MA[o] = sxy; MA[o + 5] = sxy; MA[o + 10] = sz; MA[o + 15] = 1;
+    MA[o + 12] = bx[i]; MA[o + 13] = by[i]; MA[o + 14] = FACE + sz / 2 + zoff[i];
+  }
+  vox.instanceMatrix.needsUpdate = true;
+}
+
+// ============================================================ scan state
+let scanRow = 0, doneRow = 0, scanning = true, passUrl = '';
+function rescan() { scanRow = 0; doneRow = 0; scanning = true; passUrl = activeUrl; }
+function clearCubes() { tgt.fill(0); matched.fill(0); matchCount = 0; rescan(); }
+
+let lastLiveRecord = 0;
+function passDone(now) {
+  if (P.live && now - lastLiveRecord < 300) return;
+  lastLiveRecord = now;
+  if (passUrl && passUrl === activeUrl && N) record(activeUrl, activeTitle, matchCount / N * 100, matchCount);
+  passUrl = activeUrl;
+}
+
+// ============================================================ per-page detections
+const results = new Map(); // url -> {title, pct, cubes, hex}
+let renderResultsPending = false;
+function record(url, title, pct, cubes) {
+  if (!url || url === 'about:blank') return;
+  const key = url + '|' + T.hex;
+  const prev = results.get(key);
+  if (!prev || pct > prev.pct) results.set(key, { url, title, pct, cubes, hex: T.hex });
+  if (!renderResultsPending) { renderResultsPending = true; setTimeout(renderResults, 400); }
+}
+function renderResults() {
+  renderResultsPending = false;
+  const ul = $('results'); ul.innerHTML = '';
+  const rows = [...results.values()].filter(r => r.cubes >= P.trigger).sort((a, b) => b.pct - a.pct).slice(0, 60);
+  if (!rows.length) { ul.innerHTML = '<li style="cursor:default;color:var(--dim)">No pages with the color yet</li>'; return; }
+  const maxPct = rows[0].pct || 1;
+  for (const r of rows) {
+    const li = document.createElement('li');
+    li.title = r.url;
+    li.innerHTML = `<span class="u"></span><span class="p">${r.pct.toFixed(2)}%</span><span class="bar"><i style="width:${(r.pct / maxPct * 100).toFixed(1)}%;background:${r.hex}"></i></span>`;
+    li.querySelector('.u').textContent = r.title || r.url;
+    li.onclick = () => send({ type: 'navigate', url: r.url });
+    ul.appendChild(li);
+  }
+}
+$('bCsv').onclick = () => {
+  const rows = [['url', 'title', 'target', 'coverage_pct', 'cubes'], ...[...results.values()].sort((a, b) => b.pct - a.pct).map(r => [r.url, r.title, r.hex, r.pct.toFixed(3), r.cubes])];
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'color-detections.csv'; a.click();
+};
+
+// ============================================================ machine animation
+const tmpC = new THREE.Color();
+let activity = 0, packetT = 0;
+function updateMachine(dt, hits, t) {
+  const rowPos = P.live ? (Math.sin(t * 2.2) * 0.5 + 0.5) * R : Math.min(scanRow, R);
+  const y = top - rowPos * pitch;
+  laser.position.set(Lc.x, y, FACE + 0.06);
+  // light fan from a virtual emitter above-front of the screen down to the scan line
+  const ey = top + 0.8, ez = 2.2;
+  sheet.scale.set(W, Math.hypot(ey - y, ez - FACE), 1);
+  sheet.position.set(Lc.x, (ey + y) / 2, (ez + FACE) / 2);
+  sheet.rotation.set(Math.atan2(ez - FACE, ey - y), 0, 0);
+  sheet.material.opacity = 0.10 + 0.08 * Math.sin(t * 30);
+
+  head.position.set(Rc.x, y, headZ);
+  const tx = lastHitX ?? Rc.x;
+  nozzle.position.x += ((tx - Rc.x) - nozzle.position.x) * (1 - Math.exp(-dt * 14));
+  activity = Math.max(hits > 0 ? 1 : 0, activity - dt * 3);
+  const nx = Rc.x + nozzle.position.x;
+  beam.visible = activity > 0.05;
+  beam.scale.set(1, 1, headZ - 0.22 - FACE);
+  beam.position.set(nx, y, (headZ - 0.22 + FACE) / 2);
+  beamMat.opacity = 0.5 + 0.5 * activity * (0.7 + 0.3 * Math.sin(t * 60));
+
+  const frac = N ? matchCount / N : 0;
+  const detected = matchCount >= P.trigger;
+  lampMat.emissiveIntensity = detected ? 2.5 + 1.5 * Math.sin(t * 8) : 0.25 + activity;
+  packetT += dt * (0.15 + Math.min(1, frac * 20) * 0.5);
+  packets.forEach((p, j) => {
+    p.visible = detected && !!curve;
+    if (p.visible) curve.getPointAt((packetT + j / packets.length) % 1, p.position);
+  });
+  return detected;
+}
+
+// ============================================================ UI: detector
+function setTarget(hex) {
+  hex = hex.toLowerCase();
+  T.hex = hex;
+  tmpC.set(hex);
+  T.rgb = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  toLab(...T.rgb, T.lab);
+  $('cTarget').value = hex; $('hex').textContent = hex.toUpperCase();
+  document.documentElement.style.setProperty('--tgt', hex);
+  laserMat.color.copy(hdr(hex, 5)); sheetMat.color.copy(hdr(hex, 1)); tipMat.color.copy(hdr(hex, 6));
+  beamMat.color.copy(hdr(hex, 4)); packetMat.color.copy(hdr(hex, 5)); lampMat.emissive.set(hex);
+  rescan();
+  renderResults();
+}
+$('cTarget').addEventListener('input', e => setTarget(e.target.value));
+['#ef4444', '#f97316', '#facc15', '#22c55e', '#06b6d4', '#2563eb', '#8b5cf6', '#ec4899', '#ffffff', '#000000'].forEach(h => {
+  const b = document.createElement('b'); b.style.background = h; b.title = h; b.onclick = () => setTarget(h); $('swatches').appendChild(b);
+});
+if ('EyeDropper' in window) {
+  $('bDrop').onclick = async () => { try { const r = await new EyeDropper().open(); setTarget(r.sRGBHex.length === 7 ? r.sRGBHex : rgbToHex(r.sRGBHex)); } catch {} };
+} else { $('bDrop').disabled = true; $('bDrop').title = 'EyeDropper API needs Chromium'; }
+function rgbToHex(s) { const m = s.match(/\d+/g) || [0, 0, 0]; return '#' + m.slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join(''); }
+
+function bindRange(id, key, out, fmt = v => v, after) {
+  const el = $(id), o = $(out);
+  const upd = () => { P[key] = +el.value; o.textContent = fmt(P[key]); after && after(); };
+  el.addEventListener('input', upd); upd();
+}
+bindRange('sTol', 'tol', 'vTol');
+bindRange('sCols', 'cols', 'vCols', v => `${v}`, () => { if (N) resizeGrid(); });
+bindRange('sSpeed', 'speed', 'vSpeed');
+bindRange('sDepth', 'depth', 'vDepth', v => v.toFixed(1), () => placeRails());
+bindRange('sTrig', 'trigger', 'vTrig', v => v, () => renderResults());
+const bindCheck = (id, key, after) => { const el = $(id); el.addEventListener('change', () => { P[key] = el.checked; after && after(); }); P[key] = el.checked; };
+bindCheck('kLoop', 'loop', () => { if (P.loop) scanning = true; });
+bindCheck('kLive', 'live');
+bindCheck('kTrue', 'trueColor', rescan);
+bindCheck('kGhost', 'ghost', rescan);
+$('bRescan').onclick = rescan;
+$('bClear').onclick = clearCubes;
+$('bCam').onclick = frameCamera;
+$('hL').onclick = () => $('left').classList.toggle('collapsed');
+$('hR').onclick = () => $('right').classList.toggle('collapsed');
+
+// ============================================================ backend link
+let chain = Promise.resolve();
+function send(cmd) {
+  chain = chain.then(() => fetch('/api/cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cmd) })
+    .then(r => r.json()).then(j => { if (j && j.error) toast(j.error); return j; })
+    .catch(() => toast('Backend not reachable')));
+  return chain;
+}
+let toastTimer;
+function toast(text) { const t = $('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3500); }
+
+let activeUrl = '', activeTitle = '', activeTab = null;
+const es = new EventSource('/api/events');
+es.onopen = () => { $('conn').className = 'ok'; };
+es.onerror = () => { $('conn').className = 'bad'; if (!hasFrame) placeholder('Waiting for the Chromium backend…'); };
+es.addEventListener('hello', e => { const { viewport } = JSON.parse(e.data); $('vp').value = `${viewport.width}x${viewport.height}`; });
+es.addEventListener('toast', e => toast(JSON.parse(e.data).text));
+es.addEventListener('tabs', e => renderTabs(JSON.parse(e.data)));
+es.addEventListener('crawl', e => renderCrawl(JSON.parse(e.data)));
+es.addEventListener('frame', e => onFrame(JSON.parse(e.data)));
+
+// decode newest JPEG frame, drop stale ones
+let decoding = false, nextFrame = null;
+function onFrame(f) { nextFrame = f; if (!decoding) decodeNext(); }
+async function decodeNext() {
+  const f = nextFrame; nextFrame = null;
+  if (!f) return;
+  decoding = true;
+  try {
+    const bin = atob(f.data), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const bmp = await createImageBitmap(new Blob([u8], { type: 'image/jpeg' }));
+    if (srcCanvas.width !== bmp.width || srcCanvas.height !== bmp.height) {
+      srcCanvas.width = bmp.width; srcCanvas.height = bmp.height;
+      srcTex.dispose(); srcTex = makeSrcTex(); screenMat.map = srcTex; screenMat.needsUpdate = true;
+    }
+    const a = bmp.width / bmp.height;
+    if (Math.abs(a - srcAspect) > 0.01) layout(a);
+    sctx.drawImage(bmp, 0, 0); bmp.close();
+    srcTex.needsUpdate = true; frameDirty = true; hasFrame = true;
+  } catch {}
+  decoding = false;
+  if (nextFrame) decodeNext();
+}
+
+// ============================================================ UI: browser chrome
+function renderTabs({ active, tabs }) {
+  activeTab = active;
+  const box = $('tabs'); box.innerHTML = '';
+  for (const t of tabs) {
+    const el = document.createElement('div');
+    el.className = 'tab' + (t.id === active ? ' active' : '') + (t.loading ? ' loading' : '');
+    el.title = t.url;
+    el.innerHTML = '<span class="t"></span><span class="x" title="Close">✕</span>';
+    el.querySelector('.t').textContent = t.title || t.url || 'New tab';
+    el.onclick = (e) => { if (e.target.classList.contains('x')) send({ type: 'closeTab', id: t.id }); else if (t.id !== active) send({ type: 'switch', id: t.id }); };
+    box.appendChild(el);
+  }
+  const plus = document.createElement('div'); plus.className = 'tab'; plus.style.minWidth = '34px'; plus.textContent = '＋';
+  plus.onclick = () => send({ type: 'newTab', url: 'about:blank' }).then(() => $('url').focus());
+  box.appendChild(plus);
+  const a = tabs.find(t => t.id === active);
+  if (a) {
+    if (document.activeElement !== $('url')) $('url').value = a.url === 'about:blank' ? '' : a.url;
+    if (a.url !== activeUrl) { activeUrl = a.url; rescan(); }
+    activeTitle = a.title;
+  }
+}
+$('url').addEventListener('keydown', e => { if (e.key === 'Enter') { send({ type: 'navigate', url: $('url').value }); $('url').blur(); } });
+$('bBack').onclick = () => send({ type: 'back' });
+$('bFwd').onclick = () => send({ type: 'forward' });
+$('bReload').onclick = () => send({ type: 'reload' });
+$('bNewTab').onclick = () => send({ type: 'newTab', url: $('url').value || 'about:blank' });
+$('vp').onchange = () => { const [w, h] = $('vp').value.split('x').map(Number); send({ type: 'viewport', width: w, height: h }); };
+
+// auto-browse
+let crawlOn = false;
+function renderCrawl(s) {
+  crawlOn = s.on;
+  $('bCrawl').textContent = s.on ? '■ Stop auto-browse' : '▶ Start auto-browse';
+  $('bCrawl').classList.toggle('on', s.on);
+  $('crawlTxt').textContent = `${s.on ? 'browsing' : 'idle'} · ${s.visited}/${s.max} visited · ${s.queued} queued` + (s.on && s.current ? `\n→ ${s.current}` : '');
+  $('crawlTxt').style.whiteSpace = 'pre-wrap'; $('crawlTxt').style.wordBreak = 'break-all';
+}
+$('bCrawl').onclick = () => send({ type: 'crawl', on: !crawlOn, dwell: +$('sDwell').value, sameOrigin: $('kSame').checked, scroll: $('kScroll').checked, max: +$('nMax').value });
+const pushCrawlCfg = () => send({ type: 'crawl', dwell: +$('sDwell').value, sameOrigin: $('kSame').checked, scroll: $('kScroll').checked, max: +$('nMax').value });
+$('sDwell').addEventListener('input', () => { $('vDwell').textContent = $('sDwell').value; });
+$('sDwell').addEventListener('change', pushCrawlCfg);
+$('vDwell').textContent = $('sDwell').value;
+['kSame', 'kScroll', 'nMax'].forEach(id => $(id).addEventListener('change', pushCrawlCfg));
+const urlLines = () => $('taUrls').value.split(/\s+/).map(s => s.trim()).filter(Boolean);
+$('bQueue').onclick = () => send({ type: 'enqueue', urls: urlLines() }).then(j => j && j.ok && toast(`Queued ${j.added} URL${j.added === 1 ? '' : 's'} — press Start auto-browse`));
+$('bTabs').onclick = async () => { const list = urlLines().slice(0, 30); for (const u of list) await send({ type: 'newTab', url: u }); };
+
+// ============================================================ 3D interaction → Chromium
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function screenUV(e) {
+  ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const h = ray.intersectObject(screen)[0];
+  return h ? h.uv.clone() : null;
+}
+function pixelAt(uv) {
+  const x = clamp(Math.floor(uv.x * srcCanvas.width), 0, srcCanvas.width - 1);
+  const y = clamp(Math.floor((1 - uv.y) * srcCanvas.height), 0, srcCanvas.height - 1);
+  const d = sctx.getImageData(x, y, 1, 1).data;
+  return '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+let overScreen = false, pageFocus = false, pressed = -1, lastUV = null, moveTimer = null, pendingMove = null;
+function setFocus(on) { pageFocus = on; $('focusRing').style.display = on ? 'block' : 'none'; }
+canvas.addEventListener('contextmenu', e => { if (overScreen) e.preventDefault(); });
+canvas.addEventListener('pointermove', e => {
+  const uv = screenUV(e);
+  if (e.buttons === 0) {
+    overScreen = !!uv;
+    controls.enabled = !overScreen;
+    canvas.style.cursor = overScreen ? (e.altKey ? 'crosshair' : 'default') : 'grab';
+  }
+  if (uv) {
+    const hx = pixelAt(uv); $('hover').style.background = hx; $('hoverHex').textContent = hx.toUpperCase();
+    if (overScreen || pressed >= 0) {
+      lastUV = uv; pendingMove = { x: uv.x, y: 1 - uv.y };
+      if (!moveTimer) moveTimer = setTimeout(() => { moveTimer = null; if (pendingMove) send({ type: 'mouse', action: 'move', ...pendingMove }); pendingMove = null; }, 35);
+    }
+  }
+});
+canvas.addEventListener('pointerdown', e => {
+  const uv = screenUV(e);
+  if (!uv) { setFocus(false); return; }
+  if (e.altKey) { setTarget(pixelAt(uv)); toast(`Target color set to ${T.hex.toUpperCase()}`); return; }
+  setFocus(true); pressed = e.button; lastUV = uv;
+  canvas.setPointerCapture(e.pointerId);
+  send({ type: 'mouse', action: 'down', x: uv.x, y: 1 - uv.y, button: e.button });
+});
+canvas.addEventListener('pointerup', e => {
+  if (pressed < 0) return;
+  const uv = screenUV(e) || lastUV;
+  send({ type: 'mouse', action: 'up', x: uv.x, y: 1 - uv.y, button: pressed });
+  pressed = -1;
+});
+let wdx = 0, wdy = 0, wheelTimer = null;
+canvas.addEventListener('wheel', e => {
+  if (!overScreen) return;
+  e.preventDefault();
+  wdx += e.deltaX; wdy += e.deltaY;
+  if (!wheelTimer) wheelTimer = setTimeout(() => { wheelTimer = null; send({ type: 'wheel', dx: wdx, dy: wdy }); wdx = wdy = 0; }, 50);
+}, { passive: false });
+window.addEventListener('keydown', e => {
+  if (!pageFocus) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === 'Escape') { setFocus(false); return; }
+  e.preventDefault();
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.key.length === 1 && !mod && !e.altKey) { send({ type: 'type', text: e.key }); return; }
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+  const combo = [e.ctrlKey && 'Control', e.metaKey && 'Meta', e.altKey && 'Alt', e.shiftKey && e.key.length > 1 && 'Shift', e.key === ' ' ? 'Space' : e.key].filter(Boolean).join('+');
+  send({ type: 'press', key: combo });
+});
+$('url').addEventListener('focus', () => setFocus(false));
+
+// ============================================================ camera / resize / loop
+function frameCamera() {
+  const totalW = 2 * W + GAP + 3;
+  const vfov = THREE.MathUtils.degToRad(camera.fov);
+  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+  const dist = Math.max((totalW / 2) / Math.tan(hfov / 2), (H + 3) / 2 / Math.tan(vfov / 2)) * 1.08;
+  controls.target.set(0, Lc.y - 0.2, 0.6);
+  camera.position.set(dist * 0.18, Lc.y + dist * 0.16, dist);
+  controls.update();
+}
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+
+setTarget('#ef4444');
+layout(16 / 9);
+frameCamera();
+
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  let hits = 0;
+  if (N && hasFrame) {
+    if (frameDirty || !img) { sample(); frameDirty = false; }
+    if (P.live) { lastHitX = null; hits = processRows(0, R); passDone(now); }
+    else if (scanning) {
+      scanRow += P.speed * dt;
+      const to = Math.min(R, Math.floor(scanRow));
+      if (to > doneRow) { lastHitX = null; hits = processRows(doneRow, to); doneRow = to; }
+      if (scanRow >= R) { passDone(now); if (P.loop) { scanRow = 0; doneRow = 0; } else { scanning = false; scanRow = R; } }
+    }
+  }
+  updateVoxels(dt);
+  const detected = updateMachine(dt, hits, now / 1000);
+  const pct = N ? matchCount / N * 100 : 0;
+  $('state').textContent = !hasFrame ? 'NO SIGNAL' : detected ? 'COLOR DETECTED' : (scanning || P.live ? 'SCANNING' : 'IDLE');
+  $('lamp').style.background = detected ? T.hex : '#333';
+  $('lamp').style.boxShadow = detected ? `0 0 10px ${T.hex}` : 'none';
+  $('readTxt').textContent = `${matchCount.toLocaleString()} / ${N.toLocaleString()} cubes · ${pct.toFixed(2)}%`;
+  controls.update();
+  composer.render();
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
