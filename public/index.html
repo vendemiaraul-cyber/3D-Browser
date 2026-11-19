@@ -230,12 +230,12 @@ function makeSrcTex() {
 }
 const screenMat = new THREE.MeshBasicMaterial({ map: srcTex, toneMapped: false, color: 0xeeeeee });
 const screen = mk(new THREE.PlaneGeometry(1, 1), screenMat);
-function placeholder(msg) {
+function placeholder(msg, sub = '') {
   sctx.fillStyle = '#0d1016'; sctx.fillRect(0, 0, srcCanvas.width, srcCanvas.height);
-  sctx.fillStyle = '#ffb020'; sctx.font = 'bold 42px system-ui'; sctx.textAlign = 'center';
+  sctx.fillStyle = '#ffb020'; sctx.font = `bold ${Math.round(srcCanvas.width / 30)}px system-ui`; sctx.textAlign = 'center';
   sctx.fillText(msg, srcCanvas.width / 2, srcCanvas.height / 2);
-  sctx.fillStyle = '#7d8596'; sctx.font = '24px system-ui';
-  sctx.fillText('start the backend:  npm start', srcCanvas.width / 2, srcCanvas.height / 2 + 50);
+  sctx.fillStyle = '#7d8596'; sctx.font = `${Math.round(srcCanvas.width / 60)}px system-ui`;
+  if (sub) sctx.fillText(sub, srcCanvas.width / 2, srcCanvas.height / 2 + srcCanvas.width / 26);
   srcTex.needsUpdate = true;
 }
 placeholder('Connecting to Chromium…');
@@ -550,38 +550,66 @@ $('bCam').onclick = frameCamera;
 $('hL').onclick = () => $('left').classList.toggle('collapsed');
 $('hR').onclick = () => $('right').classList.toggle('collapsed');
 
-// ============================================================ backend link
-let chain = Promise.resolve();
+// ============================================================ backend link (WebSocket)
+// Text messages are JSON events {ev, data}; binary messages are JPEG frames.
+const qs = new URLSearchParams(location.search);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+if (qs.get('key')) store.set('cv_key', qs.get('key'));
+const SESSION = qs.get('session') || store.get('cv_sid') || (() => { const id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)); store.set('cv_sid', id); return id; })();
+const KEY = qs.get('key') || store.get('cv_key') || '';
+let ws = null, rid = 0, everOpened = false, retry = 0;
+const pending = new Map();
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/api/ws?s=${encodeURIComponent(SESSION)}&key=${encodeURIComponent(KEY)}`);
+  ws.binaryType = 'blob';
+  ws.onopen = () => { everOpened = true; retry = 0; $('conn').className = 'ok'; };
+  ws.onmessage = (e) => {
+    if (typeof e.data !== 'string') return onFrame(e.data);
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    const d = m.data;
+    switch (m.ev) {
+      case 'reply': { const r = pending.get(m.rid); if (r) { pending.delete(m.rid); r(d); } if (d && d.error) toast(d.error); break; }
+      case 'hello': $('vp').value = `${d.viewport.width}x${d.viewport.height}`; break;
+      case 'status': onStatus(d); break;
+      case 'toast': toast(d.text); break;
+      case 'tabs': renderTabs(d); break;
+      case 'crawl': renderCrawl(d); break;
+    }
+  };
+  ws.onclose = () => {
+    $('conn').className = 'bad';
+    for (const r of pending.values()) r({ error: 'disconnected' });
+    pending.clear();
+    if (!hasFrame) placeholder(everOpened ? 'Reconnecting…' : 'Waiting for the backend…', everOpened ? '' : 'Local: npm run local · Cloudflare: check the Worker, or add ?key=… if ACCESS_KEY is set');
+    setTimeout(connect, Math.min(10000, 1000 * 2 ** retry++));
+  };
+}
 function send(cmd) {
-  chain = chain.then(() => fetch('/api/cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cmd) })
-    .then(r => r.json()).then(j => { if (j && j.error) toast(j.error); return j; })
-    .catch(() => toast('Backend not reachable')));
-  return chain;
+  if (!ws || ws.readyState !== 1) { toast('Not connected to the browser yet'); return Promise.resolve({ error: 'not connected' }); }
+  const id = ++rid;
+  ws.send(JSON.stringify({ ...cmd, rid: id }));
+  return new Promise((res) => pending.set(id, res));
+}
+function onStatus(s) {
+  $('state').dataset.backend = s.state;
+  if (s.state === 'launching' && !hasFrame) placeholder('Starting Chromium…', 'a fresh browser session takes a few seconds');
+  if (s.state === 'closed' || s.state === 'error') { hasFrame = false; placeholder(s.state === 'error' ? 'Chromium failed to start' : 'Chromium session ended', s.msg || ''); toast(s.msg || s.state); }
 }
 let toastTimer;
 function toast(text) { const t = $('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3500); }
 
 let activeUrl = '', activeTitle = '', activeTab = null;
-const es = new EventSource('/api/events');
-es.onopen = () => { $('conn').className = 'ok'; };
-es.onerror = () => { $('conn').className = 'bad'; if (!hasFrame) placeholder('Waiting for the Chromium backend…'); };
-es.addEventListener('hello', e => { const { viewport } = JSON.parse(e.data); $('vp').value = `${viewport.width}x${viewport.height}`; });
-es.addEventListener('toast', e => toast(JSON.parse(e.data).text));
-es.addEventListener('tabs', e => renderTabs(JSON.parse(e.data)));
-es.addEventListener('crawl', e => renderCrawl(JSON.parse(e.data)));
-es.addEventListener('frame', e => onFrame(JSON.parse(e.data)));
 
 // decode newest JPEG frame, drop stale ones
 let decoding = false, nextFrame = null;
-function onFrame(f) { nextFrame = f; if (!decoding) decodeNext(); }
+function onFrame(blob) { nextFrame = blob; if (!decoding) decodeNext(); }
 async function decodeNext() {
   const f = nextFrame; nextFrame = null;
   if (!f) return;
   decoding = true;
   try {
-    const bin = atob(f.data), u8 = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-    const bmp = await createImageBitmap(new Blob([u8], { type: 'image/jpeg' }));
+    const bmp = await createImageBitmap(new Blob([f], { type: 'image/jpeg' }));
     if (srcCanvas.width !== bmp.width || srcCanvas.height !== bmp.height) {
       srcCanvas.width = bmp.width; srcCanvas.height = bmp.height;
       srcTex.dispose(); srcTex = makeSrcTex(); screenMat.map = srcTex; screenMat.needsUpdate = true;
@@ -756,6 +784,7 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
+connect();
 </script>
 </body>
 </html>

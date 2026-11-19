@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "3d-browser",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-12",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The three.js machine (public/index.html) is served as static assets.
+  // Anything that isn't a file (like /api/ws) goes to the Worker.
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  // Browser Run (formerly Browser Rendering): Chromium on Cloudflare's network.
+  "browser": { "binding": "MYBROWSER" },
+
+  // One Durable Object per viewer session keeps its Chromium alive and streams it over WebSocket.
+  "durable_objects": {
+    "bindings": [{ "name": "SESSION", "class_name": "BrowserSession" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BrowserSession"] }],
+
+  "vars": {
+    "START_URL": "https://en.wikipedia.org/wiki/Color",
+    "VIEWPORT_W": "1280",
+    "VIEWPORT_H": "720",
+    "JPEG_QUALITY": "65",
+    "IDLE_SECONDS": "60",        // close Chromium this long after the last viewer leaves
+    "KEEP_ALIVE_SECONDS": "300"  // Browser Run inactivity timeout (60–1200)
+  },
+  // Optional secret: npx wrangler secret put ACCESS_KEY   → then open the site with ?key=YOUR_KEY
+
+  "observability": { "enabled": true }
+}
